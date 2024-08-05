@@ -42,12 +42,12 @@ OPT_LD_CONST              = Bits6( 28 )
 OPT_MUL_ADD               = Bits6( 18 )
 OPT_MUL_CONST             = Bits6( 29 )
 OPT_MUL_CONST_ADD         = Bits6( 30 )
-OPT_MUL_SUB               = Bits6( 19 )
-OPT_MUL_LLS               = Bits6( 20 )
-OPT_MUL_LRS               = Bits6( 21 )
-OPT_MUL_ADD_LLS           = Bits6( 22 )
-OPT_MUL_SUB_LLS           = Bits6( 23 )
-OPT_MUL_SUB_LRS           = Bits6( 24 )
+# OPT_MUL_SUB               = Bits6( 19 )
+# OPT_MUL_LLS               = Bits6( 20 )
+# OPT_MUL_LRS               = Bits6( 21 )
+# OPT_MUL_ADD_LLS           = Bits6( 22 )
+# OPT_MUL_SUB_LLS           = Bits6( 23 )
+# OPT_MUL_SUB_LRS           = Bits6( 24 )
 
 OPT_FADD                  = Bits6( 37 )
 OPT_FSUB                  = Bits6( 38 )
@@ -55,6 +55,28 @@ OPT_FADD_CONST            = Bits6( 39 )
 OPT_FINC                  = Bits6( 40 )
 OPT_FMUL                  = Bits6( 41 )
 OPT_FMUL_CONST            = Bits6( 42 )
+# fmul + fadd + fadd
+OPT_FMUL_FADD             = Bits6( 43 )
+OPT_FMUL_FADD_FADD        = Bits6( 44 )
+OPT_FMUL_FSUB             = Bits6( 45 )
+OPT_FMUL_FSUB_FSUB        = Bits6( 46 )
+OPT_FADD_FADD             = Bits6( 47 )
+OPT_FADD_FADD_FADD        = Bits6( 48 )
+# phi + add
+OPT_PHI_FADD_FADD         = Bits6( 49 )
+OPT_PHI_FADD              = Bits6( 19 )
+# compare + select
+OPT_FEQ_SEL               = Bits6( 50 )  
+OPT_FLT_SEL               = Bits6( 51 )
+OPT_FLTE_SEL              = Bits6( 52 )
+OPT_FGT_SEL               = Bits6( 53 )
+OPT_FGTE_SEL              = Bits6( 54 )
+OPT_FLT                   = Bits6( 55 )
+OPT_FLTE                  = Bits6( 56 )
+OPT_FGT                   = Bits6( 57 )
+OPT_FGTE                  = Bits6( 58 )
+OPT_FEQ                   = Bits6( 59 )
+
 
 OPT_VEC_ADD          = Bits6( 50 )
 OPT_VEC_INC          = Bits6( 51 )
@@ -100,12 +122,18 @@ OPT_SYMBOL_DICT = {
   OPT_MUL_ADD       : "(* +)",
   OPT_MUL_CONST     : "(*')",
   OPT_MUL_CONST_ADD : "(*' +)",
-  OPT_MUL_SUB       : "(* -)",
-  OPT_MUL_LLS       : "(* <<)",
-  OPT_MUL_LRS       : "(* >>)",
-  OPT_MUL_ADD_LLS   : "(* + <<)",
-  OPT_MUL_SUB_LLS   : "(* + <<)",
-  OPT_MUL_SUB_LRS   : "(* - >>)",
+  # OPT_MUL_SUB       : "(* -)",
+  # OPT_MUL_LLS       : "(* <<)",
+  # OPT_MUL_LRS       : "(* >>)",
+  # OPT_MUL_ADD_LLS   : "(* + <<)",
+  # OPT_MUL_SUB_LLS   : "(* + <<)",
+  # OPT_MUL_SUB_LRS   : "(* - >>)",
+  OPT_FMUL_FADD     : "(f+)",
+  OPT_FMUL_FADD_FADD: "(f+ +)",
+  OPT_FMUL_FSUB      : "(f-)",
+  OPT_FMUL_FSUB_FSUB : "(f- -)",
+  OPT_FADD_FADD      : "(+)",
+  OPT_FADD_FADD_FADD : "(+ +)",
 
   OPT_FADD           : "(f+)",
   OPT_FADD_CONST     : "(f+')",
