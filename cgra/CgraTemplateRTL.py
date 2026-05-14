@@ -37,6 +37,21 @@ from ..fu.float.FpAddRTL import FpAddRTL
 from ..fu.float.FpMulRTL import FpMulRTL
 
 fu_map = {
+  "AdderRTL": AdderRTL,
+  "MulRTL": MulRTL,
+  "DivRTL": ExclusiveDivRTL,
+  "ExclusiveDivRTL": ExclusiveDivRTL,
+  "LogicRTL": LogicRTL,
+  "ShifterRTL": ShifterRTL,
+  "PhiRTL": PhiRTL,
+  "CompRTL": CompRTL,
+  "GrantRTL": GrantRTL,
+  "MemUnitRTL": MemUnitRTL,
+  "SelRTL": SelRTL,
+  "RetRTL": RetRTL,
+  "SeqMulAdderRTL": SeqMulAdderRTL,
+  "FpAddRTL": FpAddRTL,
+  "FpMulRTL": FpMulRTL,
   "add": AdderRTL,
   "mul": MulRTL,
   "div": ExclusiveDivRTL,
@@ -62,9 +77,14 @@ fu_map = {
 }
 
 def map_fu2rtl(fu_type: list[str]):
-  fuRTL = list({fu_map[fu] for fu in fu_type})
-  fuRTL_new = [fu for fu in fuRTL if fu is not None]
-  return fuRTL_new
+  fuRTL = []
+  for fu in fu_type:
+    if fu not in fu_map:
+      raise ValueError(f"Unsupported FU type in arch YAML: {fu}")
+    fu_cls = fu_map[fu]
+    if fu_cls is not None and fu_cls not in fuRTL:
+      fuRTL.append(fu_cls)
+  return fuRTL
 
 
 class CgraTemplateRTL(Component):
@@ -100,7 +120,17 @@ class CgraTemplateRTL(Component):
                                    num_tiles, num_rd_tiles,
                                    CgraPayloadType)
 
-    s.num_mesh_ports = 8
+    num_fu_inports = len(CtrlSignalType.get_field_type(kAttrFuIn))
+    num_routing_outports = len(
+        CtrlSignalType.get_field_type(kAttrRoutingXbarOutport))
+    num_tile_outports = num_routing_outports - num_fu_inports
+    # CgraTemplateRTL uses symmetric tile input/output routing ports. The
+    # control type encodes routing outports directly, so derive the tile port
+    # count from that shape instead of assuming the old 8-port KingMesh setup.
+    num_tile_inports = num_tile_outports
+    num_fu_outports = 2
+
+    s.num_mesh_ports = num_tile_outports
     s.num_tiles = len(TileList)
     num_cgras = multi_cgra_rows * multi_cgra_columns
     # An additional router for controller to receive CMD_COMPLETE signal from Ring to CPU.
@@ -130,10 +160,11 @@ class CgraTemplateRTL(Component):
     s.tile = [TileRTL(CtrlPktType,
                       ctrl_mem_size,
                       data_mem_size_global, num_ctrl,
-                      total_steps, 4, 2, s.num_mesh_ports,
-                      s.num_mesh_ports, num_cgras, s.num_tiles,
+                      total_steps, num_fu_inports, num_fu_outports,
+                      num_tile_inports, num_tile_outports, num_cgras,
+                      s.num_tiles,
                       num_registers_per_reg_bank,
-                      FuList = map_fu2rtl(TileList[i].getAllValidFuTypes()))
+                      FuList = list(FuList))
               for i in range(s.num_tiles)]
     # FIXME: Need to enrish data-SPM-related user-controlled parameters, e.g., number of banks.
     s.data_mem = DataMemControllerRTL(NocPktType,
@@ -204,6 +235,8 @@ class CgraTemplateRTL(Component):
     for link in LinkList:
 
       if link.isFromMem():
+        if link.dstPort >= num_tile_inports:
+          continue
         memPort = link.getMemReadPort()
         dstTileIndex = link.dstTile.getIndex(TileList)
         if not link.disabled:
@@ -216,6 +249,8 @@ class CgraTemplateRTL(Component):
             s.tile[dstTileIndex].recv_data[link.dstPort].msg //= DataType(0, 0)
 
       elif link.isToMem():
+        if link.srcPort >= num_tile_outports:
+          continue
         memPort = link.getMemWritePort()
         srcTileIndex = link.srcTile.getIndex(TileList)
         if not link.disabled:
@@ -227,6 +262,8 @@ class CgraTemplateRTL(Component):
             s.tile[srcTileIndex].send_data[link.srcPort].rdy //= 0
 
       else:
+        if link.srcPort >= num_tile_outports or link.dstPort >= num_tile_inports:
+          continue
         srcTileIndex = link.srcTile.getIndex(TileList)
         dstTileIndex = link.dstTile.getIndex(TileList)
         if not link.disabled:
@@ -290,6 +327,8 @@ class CgraTemplateRTL(Component):
         i = row * per_cgra_columns + col
 
         for invalidInPort in TileList[i].getInvalidInPorts():
+          if invalidInPort >= num_tile_inports:
+            continue
           """
             Corner case 1:
               When the links between the dataSPM and the leftmost tiles are disabled, the PORT_INDEX_WEST status becomes invalid.
@@ -304,6 +343,8 @@ class CgraTemplateRTL(Component):
             s.tile[i].recv_data[invalidInPort].msg //= DataType(0, 0)
 
         for invalidOutPort in TileList[i].getInvalidOutPorts():
+          if invalidOutPort >= num_tile_outports:
+            continue
           if not ((is_multi_cgra and col == 0 and invalidOutPort == PORT_INDEX_WEST) or (is_multi_cgra and row == 0 and invalidOutPort == PORT_INDEX_SOUTH)):
             s.tile[i].send_data[invalidOutPort].rdy //= 0
 
