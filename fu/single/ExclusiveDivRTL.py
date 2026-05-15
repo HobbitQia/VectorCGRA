@@ -51,7 +51,8 @@ class ExclusiveDivRTL(Fu):
         s.cur_cycle <<= s.cur_cycle
       elif s.do_div:
         s.cur_cycle <<= s.cur_cycle + 1
-      elif (s.recv_all_val & (s.recv_opt.msg.operation == OPT_DIV)):
+      elif (s.recv_all_val & ((s.recv_opt.msg.operation == OPT_DIV) |
+                              (s.recv_opt.msg.operation == OPT_DIV_CONST))):
         s.cur_cycle <<= 1
       else:
         s.cur_cycle <<= 0
@@ -97,6 +98,18 @@ class ExclusiveDivRTL(Fu):
           s.send_out[0].val @= (latency - 1 == s.cur_cycle)
           s.recv_in[s.in0_idx].rdy @= s.send_out[0].val & s.send_out[0].rdy
           s.recv_in[s.in1_idx].rdy @= s.send_out[0].val & s.send_out[0].rdy
+          s.do_div @= 1
+          s.recv_opt.rdy @= s.send_out[0].val & s.send_out[0].rdy
+        elif s.recv_opt.msg.operation == OPT_DIV_CONST:
+          s.div.dividend @= s.recv_in[s.in0_idx].msg.payload
+          s.div.divisor @= s.recv_const.msg.payload
+          s.send_out[0].msg.payload @= s.div.quotient
+          s.send_out[0].msg.predicate @= s.recv_in[s.in0_idx].msg.predicate & \
+                                         s.reached_vector_factor
+          s.recv_all_val @= s.recv_in[s.in0_idx].val & s.recv_const.val
+          s.send_out[0].val @= (latency - 1 == s.cur_cycle)
+          s.recv_in[s.in0_idx].rdy @= s.send_out[0].val & s.send_out[0].rdy
+          s.recv_const.rdy @= s.send_out[0].val & s.send_out[0].rdy
           s.do_div @= 1
           s.recv_opt.rdy @= s.send_out[0].val & s.send_out[0].rdy
         else:
