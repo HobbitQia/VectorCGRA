@@ -31,6 +31,7 @@ from ..fu.single.MulRTL import MulRTL
 from ..fu.single.ExclusiveDivRTL import ExclusiveDivRTL
 from ..fu.single.LogicRTL import LogicRTL
 from ..fu.single.GrantRTL import GrantRTL
+from ..fu.single.GepRTL import GepRTL
 from ..fu.single.LoopControlRTL import LoopControlRTL
 from ..fu.single.ConstRTL import ConstRTL
 from ..fu.float.FpAddRTL import FpAddRTL
@@ -49,6 +50,7 @@ fu_map = {
   "MemUnitRTL": MemUnitRTL,
   "SelRTL": SelRTL,
   "RetRTL": RetRTL,
+  "GepRTL": GepRTL,
   "SeqMulAdderRTL": SeqMulAdderRTL,
   "FpAddRTL": FpAddRTL,
   "FpMulRTL": FpMulRTL,
@@ -71,6 +73,8 @@ fu_map = {
   "constant": ConstRTL,
   "mem": MemUnitRTL,
   "return": RetRTL,
+  "gep": GepRTL,
+  "gep_2d": GepRTL,
   "mem_indexed": MemUnitRTL,
   "alloca": None,
   "shift": ShifterRTL,
@@ -95,7 +99,7 @@ class CgraTemplateRTL(Component):
                 per_cgra_rows, per_cgra_columns,
                 ctrl_mem_size, data_mem_size_global,
                 data_mem_size_per_bank, num_banks_per_cgra,
-                num_registers_per_reg_bank, num_ctrl,
+                num_registers_per_reg_bank, num_fu_outports, num_ctrl,
                 total_steps, mem_access_is_combinational,
                 FunctionUnit, FuList, TileList, LinkList,
                 dataSPM, controller2addr_map, idTo2d_map,
@@ -128,7 +132,6 @@ class CgraTemplateRTL(Component):
     # control type encodes routing outports directly, so derive the tile port
     # count from that shape instead of assuming the old 8-port KingMesh setup.
     num_tile_inports = num_tile_outports
-    num_fu_outports = 2
 
     s.num_mesh_ports = num_tile_outports
     s.num_tiles = len(TileList)
