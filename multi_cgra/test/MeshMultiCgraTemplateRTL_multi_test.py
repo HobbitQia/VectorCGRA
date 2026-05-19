@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Generate a YAML-configured single-CGRA CgraTemplateRTL Verilog top.
+Generate a YAML-configured MeshMultiCgraTemplateRTL Verilog top.
 
-This file restores the top-level helper expected by scripts/generate_single_cgra.py.
-It is intentionally small: the pytest simulation harness that used to live here
-is not required for the Chipyard flow, but the YAML loader and PyMTL3
-translation entry point are.
+This entry point only handles VectorCGRA/PyMTL parameterization and
+translation. Top-level orchestration and Chipyard synchronization live in
+scripts/generate_multi_cgra.py.
 """
 
 from __future__ import annotations
@@ -43,27 +42,27 @@ from pymtl3.passes.backends.verilog import (  # noqa: E402
     VerilogTranslationPass,
 )
 
-from VectorCGRA.cgra.CgraTemplateRTL import (  # noqa: E402
-    CgraTemplateRTL,
-    map_fu2rtl,
-)
+from VectorCGRA.cgra.CgraTemplateRTL import map_fu2rtl  # noqa: E402
 from VectorCGRA.fu.flexible.FlexibleFuRTL import FlexibleFuRTL  # noqa: E402
 from VectorCGRA.lib.messages import (  # noqa: E402
     mk_cgra_payload,
     mk_ctrl,
     mk_data,
 )
+from VectorCGRA.multi_cgra.MeshMultiCgraTemplateRTL import (  # noqa: E402
+    MeshMultiCgraTemplateRTL,
+)
 from VectorCGRA.multi_cgra.arch_parser.ArchParser import ArchParser  # noqa: E402
 
 
-DEFAULT_ARCH_YAML = REPO_ROOT / "configs" / "arch" / "arch.yaml"
-DEFAULT_SOC_YAML = REPO_ROOT / "configs" / "soc" / "cgra_soc.yaml"
-DEFAULT_OUTPUT = VECTOR_ROOT / "CgraTemplateRTL_single__pickled.v"
-TOP_MODULE = "CgraTemplateRTL_single"
+DEFAULT_ARCH_YAML = REPO_ROOT / "configs" / "arch" / "multi_cgra_arch.yaml"
+DEFAULT_SOC_YAML = REPO_ROOT / "configs" / "soc" / "multi_cgra_soc.yaml"
+DEFAULT_OUTPUT = VECTOR_ROOT / "MeshMultiCgraTemplateRTL_multi__pickled.v"
+TOP_MODULE = "MeshMultiCgraTemplateRTL_multi"
 
 
 @dataclass(frozen=True)
-class SocConfig:
+class MultiSocConfig:
   num_tile_inports: int
   num_tile_outports: int
   num_fu_inports: int
@@ -75,7 +74,8 @@ class SocConfig:
   num_banks_per_cgra: int
   num_registers_per_reg_bank: int
   mem_access_is_combinational: bool
-  ctrl_count_per_iter: int | None
+  ctrl_steps_per_iter: int | None
+  ctrl_steps_total: int | None
 
 
 def resolve_input_path(path: str | Path) -> Path:
@@ -127,7 +127,7 @@ def optional_bool(data: Mapping[str, object], key: str, default: bool, path: Pat
   return value
 
 
-def load_soc_config(path: str | Path) -> SocConfig:
+def load_multi_soc_config(path: str | Path) -> MultiSocConfig:
   soc_yaml = resolve_input_path(path)
   data = load_yaml_mapping(soc_yaml)
   interface = require_mapping(data, "interface", soc_yaml)
@@ -138,7 +138,7 @@ def load_soc_config(path: str | Path) -> SocConfig:
   if not isinstance(execution, Mapping):
     raise ValueError(f"{soc_yaml}: 'execution' must be a mapping")
 
-  return SocConfig(
+  return MultiSocConfig(
       num_tile_inports=require_int(interface, "num_tile_inports", soc_yaml),
       num_tile_outports=require_int(interface, "num_tile_outports", soc_yaml),
       num_fu_inports=require_int(interface, "num_fu_inports", soc_yaml),
@@ -152,22 +152,17 @@ def load_soc_config(path: str | Path) -> SocConfig:
           memory, "num_registers_per_reg_bank", soc_yaml),
       mem_access_is_combinational=optional_bool(
           memory, "mem_access_is_combinational", False, soc_yaml),
-      ctrl_count_per_iter=optional_int(execution, "ctrl_count_per_iter", soc_yaml),
+      ctrl_steps_per_iter=optional_int(execution, "ctrl_steps_per_iter", soc_yaml),
+      ctrl_steps_total=optional_int(execution, "ctrl_steps_total", soc_yaml),
   )
-
-
-def make_id_to_2d_map(num_cgra_columns: int, num_cgra_rows: int) -> dict[int, list[int]]:
-  return {
-      row * num_cgra_columns + col: [col, row]
-      for row in range(num_cgra_rows)
-      for col in range(num_cgra_columns)
-  }
 
 
 def make_controller_addr_map(data_mem_size_global: int,
                              num_cgra_columns: int,
                              num_cgra_rows: int) -> dict[int, list[int]]:
   num_cgras = num_cgra_columns * num_cgra_rows
+  if data_mem_size_global % num_cgras != 0:
+    raise ValueError("data_mem_size_global must divide evenly across CGRAs")
   per_cgra_data_size = data_mem_size_global // num_cgras
   return {
       cgra_id: [cgra_id * per_cgra_data_size,
@@ -176,32 +171,53 @@ def make_controller_addr_map(data_mem_size_global: int,
   }
 
 
-def collect_fu_list(tiles: object) -> list[type]:
+def collect_fu_list(id2valid_tiles: Mapping[int, object]) -> list[type]:
   fu_list = []
-  for tile in tiles:
-    for fu_cls in map_fu2rtl(tile.getAllValidFuTypes()):
-      if fu_cls not in fu_list:
-        fu_list.append(fu_cls)
+  for tiles in id2valid_tiles.values():
+    for tile in tiles:
+      for fu_cls in map_fu2rtl(tile.getAllValidFuTypes()):
+        if fu_cls not in fu_list:
+          fu_list.append(fu_cls)
   return fu_list
 
 
-def build_dut_from_kernel(kernel_yaml: Path,
-                          arch_yaml: Path = DEFAULT_ARCH_YAML,
-                          soc_yaml: Path = DEFAULT_SOC_YAML) -> CgraTemplateRTL:
-  load_yaml_mapping(resolve_input_path(kernel_yaml))
-  return build_dut(arch_yaml, soc_yaml)
-
-
-def build_dut(arch_yaml: Path, soc_yaml: Path) -> CgraTemplateRTL:
-  soc_cfg = load_soc_config(soc_yaml)
+def build_dut(arch_yaml: Path, soc_yaml: Path) -> MeshMultiCgraTemplateRTL:
+  soc_cfg = load_multi_soc_config(soc_yaml)
   arch_parser = ArchParser(str(arch_yaml))
-  param_cgra = arch_parser.get_simplest_cgra_param()
-  multi_cgra_rows = arch_parser.cgra_rows
-  multi_cgra_columns = arch_parser.cgra_columns
-  num_tiles = len(param_cgra.getValidTiles())
+  multi_cgra_param = arch_parser.parse_multi_cgra_param()
+  num_cgra_rows = multi_cgra_param.rows
+  num_cgra_columns = multi_cgra_param.cols
+  num_cgras = num_cgra_rows * num_cgra_columns
+
+  id2validTiles = {}
+  id2validLinks = {}
+  id2dataSPM = {}
+  id2ctrlMemSize_map = {}
+  id2cgraSize_map = {}
+  for cgra_row in range(num_cgra_rows):
+    for cgra_col in range(num_cgra_columns):
+      cgra_id = cgra_row * num_cgra_columns + cgra_col
+      param_cgra = multi_cgra_param.cgras[cgra_row][cgra_col]
+      id2validTiles[cgra_id] = param_cgra.getValidTiles()
+      id2validLinks[cgra_id] = param_cgra.getValidLinks()
+      id2dataSPM[cgra_id] = param_cgra.dataSPM
+      id2ctrlMemSize_map[cgra_id] = param_cgra.configMemSize
+      id2cgraSize_map[cgra_id] = [param_cgra.rows, param_cgra.columns]
+
+  ctrl_mem_size = max(id2ctrlMemSize_map.values())
+  ctrl_steps_per_iter = (
+      soc_cfg.ctrl_steps_per_iter
+      if soc_cfg.ctrl_steps_per_iter is not None
+      else ctrl_mem_size
+  )
+  ctrl_steps_total = (
+      soc_cfg.ctrl_steps_total
+      if soc_cfg.ctrl_steps_total is not None
+      else ctrl_steps_per_iter
+  )
 
   DataType = mk_data(soc_cfg.data_nbits, soc_cfg.predicate_nbits)
-  DataAddrType = mk_bits(clog2(soc_cfg.data_mem_size_global))
+  DataAddrType = mk_bits(max(1, clog2(soc_cfg.data_mem_size_global)))
   CtrlType = mk_ctrl(
       soc_cfg.num_fu_inports,
       soc_cfg.num_fu_outports,
@@ -209,57 +225,42 @@ def build_dut(arch_yaml: Path, soc_yaml: Path) -> CgraTemplateRTL:
       soc_cfg.num_tile_outports,
       soc_cfg.num_registers_per_reg_bank,
   )
-  CtrlAddrType = mk_bits(clog2(param_cgra.configMemSize))
+  CtrlAddrType = mk_bits(max(1, clog2(ctrl_mem_size)))
   CgraPayloadType = mk_cgra_payload(DataType, DataAddrType, CtrlType,
                                     CtrlAddrType)
 
   controller2addr_map = make_controller_addr_map(
-      soc_cfg.data_mem_size_global, multi_cgra_columns, multi_cgra_rows)
-  id_to_2d_map = make_id_to_2d_map(multi_cgra_columns, multi_cgra_rows)
-  tiles = param_cgra.getValidTiles()
-  links = param_cgra.getValidLinks()
-  fu_list = collect_fu_list(tiles)
+      soc_cfg.data_mem_size_global, num_cgra_columns, num_cgra_rows)
+  fu_list = collect_fu_list(id2validTiles)
+  if not fu_list:
+    raise ValueError("architecture YAML produced an empty FU list")
 
-  ctrl_count_per_iter = (
-      soc_cfg.ctrl_count_per_iter
-      if soc_cfg.ctrl_count_per_iter is not None
-      else param_cgra.configMemSize
-  )
-  total_ctrl_steps = ctrl_count_per_iter
-
-  if num_tiles != param_cgra.rows * param_cgra.columns:
-    raise ValueError("disabled tiles are not supported by the single-CGRA wrapper")
-  if soc_cfg.num_tile_inports != soc_cfg.num_tile_outports:
-    raise ValueError("CgraTemplateRTL single flow expects symmetric tile ports")
-
-  return CgraTemplateRTL(
+  return MeshMultiCgraTemplateRTL(
       CgraPayloadType,
-      multi_cgra_rows,
-      multi_cgra_columns,
-      param_cgra.rows,
-      param_cgra.columns,
-      param_cgra.configMemSize,
+      num_cgra_rows,
+      num_cgra_columns,
+      ctrl_mem_size,
       soc_cfg.data_mem_size_global,
       soc_cfg.data_mem_size_per_bank,
       soc_cfg.num_banks_per_cgra,
       soc_cfg.num_registers_per_reg_bank,
       soc_cfg.num_fu_outports,
-      ctrl_count_per_iter,
-      total_ctrl_steps,
-      soc_cfg.mem_access_is_combinational,
+      ctrl_steps_per_iter,
+      ctrl_steps_total,
       FlexibleFuRTL,
       fu_list,
-      tiles,
-      links,
-      param_cgra.dataSPM,
       controller2addr_map,
-      id_to_2d_map,
-      is_multi_cgra=False,
-      cgra_id=0,
+      id2ctrlMemSize_map,
+      id2cgraSize_map,
+      id2validTiles,
+      id2validLinks,
+      id2dataSPM,
+      soc_cfg.mem_access_is_combinational,
+      is_multi_cgra=True,
   )
 
 
-def translate_dut(dut: CgraTemplateRTL, output: Path,
+def translate_dut(dut: MeshMultiCgraTemplateRTL, output: Path,
                   top_module: str = TOP_MODULE) -> None:
   dut.elaborate()
   dut.set_metadata(VerilogTranslationPass.enable, True)
@@ -279,15 +280,8 @@ def translate(arch_yaml: Path, soc_yaml: Path, output: Path,
   translate_dut(build_dut(arch_yaml, soc_yaml), output, top_module)
 
 
-def translate_kernel(kernel_yaml: Path, arch_yaml: Path, soc_yaml: Path, output: Path,
-                     top_module: str = TOP_MODULE) -> None:
-  translate_dut(build_dut_from_kernel(kernel_yaml, arch_yaml, soc_yaml),
-                output, top_module)
-
-
 def parse_args() -> argparse.Namespace:
   parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument("--kernel-yaml")
   parser.add_argument("--arch-yaml", default=str(DEFAULT_ARCH_YAML))
   parser.add_argument("--soc-yaml", default=str(DEFAULT_SOC_YAML))
   parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
@@ -308,14 +302,7 @@ def main() -> int:
   if not soc_yaml.exists():
     raise FileNotFoundError(soc_yaml)
 
-  if args.kernel_yaml:
-    kernel_yaml = resolve_input_path(args.kernel_yaml)
-    if not kernel_yaml.exists():
-      raise FileNotFoundError(kernel_yaml)
-    translate_kernel(kernel_yaml, arch_yaml, soc_yaml, output, args.top_module)
-  else:
-    translate(arch_yaml, soc_yaml, output, args.top_module)
-
+  translate(arch_yaml, soc_yaml, output, args.top_module)
   print(f"wrote {output}")
   return 0
 
