@@ -56,6 +56,7 @@ fu_map = {
   "FpMulRTL": FpMulRTL,
   "add": AdderRTL,
   "mul": MulRTL,
+  "mul_add": SeqMulAdderRTL,
   "div": ExclusiveDivRTL,
   "fadd": FpAddRTL,
   "fmul": FpMulRTL,
