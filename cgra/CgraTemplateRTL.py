@@ -36,6 +36,9 @@ from ..fu.single.LoopControlRTL import LoopControlRTL
 from ..fu.single.ConstRTL import ConstRTL
 from ..fu.float.FpAddRTL import FpAddRTL
 from ..fu.float.FpMulRTL import FpMulRTL
+from ..fu.vector.VectorMulComboRTL import VectorMulComboRTL
+from ..fu.vector.VectorAdderComboRTL import VectorAdderComboRTL
+from ..fu.vector.VectorAllReduceRTL import VectorAllReduceRTL
 
 fu_map = {
   "AdderRTL": AdderRTL,
@@ -79,6 +82,9 @@ fu_map = {
   "mem_indexed": MemUnitRTL,
   "alloca": None,
   "shift": ShifterRTL,
+  "vector_mul_combo": VectorMulComboRTL,
+  "vector_adder_combo": VectorAdderComboRTL,
+  "vector_all_reduce": VectorAllReduceRTL,
 }
 
 def map_fu2rtl(fu_type: list[str]):
