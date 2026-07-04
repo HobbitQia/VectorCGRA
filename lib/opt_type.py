@@ -121,6 +121,41 @@ OPT_GEP_2D_CONST                 = OpCodeType( 95 )
 OPT_LLS_CONST                    = OpCodeType( 96 )
 OPT_GT_CONST                     = OpCodeType( 97 )
 OPT_LT_CONST                     = OpCodeType( 98 )
+OPT_REM_CONST                    = OpCodeType( 99 )
+OPT_AND_CONST                    = OpCodeType( 100 )
+OPT_OR_CONST                     = OpCodeType( 101 )
+
+OPT_USES_CONST_LIST = (
+  OPT_CONST,
+  OPT_ADD_CONST,
+  OPT_SUB_CONST,
+  OPT_DIV_CONST,
+  OPT_EQ_CONST,
+  OPT_NE_CONST,
+  OPT_PHI_CONST,
+  OPT_LD_CONST,
+  OPT_STR_CONST,
+  OPT_MUL_CONST,
+  OPT_MUL_CONST_ADD,
+  OPT_ADD_CONST_LD,
+  OPT_INC_NE_CONST_NOT_GRT,
+  OPT_FADD_CONST,
+  OPT_FMUL_CONST,
+  OPT_VEC_ADD_CONST,
+  OPT_VEC_SUB_CONST,
+  OPT_VEC_ADD_CONST_COMBINED,
+  OPT_VEC_SUB_CONST_COMBINED,
+  OPT_GRT_ONCE_CONST,
+  OPT_GTE_CONST,
+  OPT_LT_CONST,
+  OPT_GT_CONST,
+  OPT_AND_CONST,
+  OPT_OR_CONST,
+  OPT_LLS_CONST,
+  OPT_REM_CONST,
+  OPT_GEP_CONST,
+  OPT_GEP_2D_CONST,
+)
 
 OPT_SYMBOL_DICT = {
   OPT_START                      : "(start)",
@@ -227,4 +262,7 @@ OPT_SYMBOL_DICT = {
   OPT_LLS_CONST                  : "(<<')",
   OPT_GT_CONST                   : "(?>')",
   OPT_LT_CONST                   : "(?<')",
+  OPT_AND_CONST                  : "(&')",
+  OPT_OR_CONST                   : "(|')",
+  OPT_REM_CONST                  : "(%')",
 }
