@@ -125,6 +125,40 @@ class DmaEngineRTL( Component ):
     s.word_idx_reg      //= s.word_idx_ff
     s.wr_mask_reg       //= s.wr_mask_ff
 
+    # Name each 32-bit lane explicitly. Keeping the slice arithmetic outside
+    # update blocks makes PyMTL evaluate the bounds during elaboration instead
+    # of emitting undersized SystemVerilog constant expressions (for example,
+    # a 6-bit 32*2 expression that wraps to zero).
+    s.beat_word0 = Wire( SpmDataType )
+    s.beat_word1 = Wire( SpmDataType )
+    s.beat_word2 = Wire( SpmDataType )
+    s.beat_word3 = Wire( SpmDataType )
+    s.beat_word0 //= s.beat_reg[0 * spm_data_nbits : 1 * spm_data_nbits]
+    s.beat_word1 //= s.beat_reg[1 * spm_data_nbits : 2 * spm_data_nbits]
+    s.beat_word2 //= s.beat_reg[2 * spm_data_nbits : 3 * spm_data_nbits]
+    s.beat_word3 //= s.beat_reg[3 * spm_data_nbits : 4 * spm_data_nbits]
+
+    s.beat_with_spm_resp = Wire( MemDataType )
+
+    @update
+    def compose_beat_with_spm_resp():
+      if s.word_idx_reg == b2( 0 ):
+        s.beat_with_spm_resp @= concat(
+          s.beat_word3, s.beat_word2, s.beat_word1,
+          s.recv_from_spm_rd_resp.msg.data )
+      elif s.word_idx_reg == b2( 1 ):
+        s.beat_with_spm_resp @= concat(
+          s.beat_word3, s.beat_word2,
+          s.recv_from_spm_rd_resp.msg.data, s.beat_word0 )
+      elif s.word_idx_reg == b2( 2 ):
+        s.beat_with_spm_resp @= concat(
+          s.beat_word3, s.recv_from_spm_rd_resp.msg.data,
+          s.beat_word1, s.beat_word0 )
+      else:
+        s.beat_with_spm_resp @= concat(
+          s.recv_from_spm_rd_resp.msg.data,
+          s.beat_word2, s.beat_word1, s.beat_word0 )
+
     # Precompute commonly used values at construct time (not inside any
     # @update block) to avoid PyMTL3 AST translation limitations on the
     # floor-division operator.
@@ -155,13 +189,13 @@ class DmaEngineRTL( Component ):
       spm_wdata = SpmDataType(0)
 
       if s.word_idx_reg == b2( 0 ): # Writes the first word of the beat to SPM
-        spm_wdata = s.beat_reg[0:spm_data_nbits]
+        spm_wdata = s.beat_word0
       elif s.word_idx_reg == b2( 1 ): # Writes the second word of the beat to SPM
-        spm_wdata = s.beat_reg[spm_data_nbits:spm_data_nbits*2]
+        spm_wdata = s.beat_word1
       elif s.word_idx_reg == b2( 2 ): # 3rd word
-        spm_wdata = s.beat_reg[spm_data_nbits*2:spm_data_nbits*3]
+        spm_wdata = s.beat_word2
       else: # 4th word
-        spm_wdata = s.beat_reg[spm_data_nbits*3:spm_data_nbits*4]
+        spm_wdata = s.beat_word3
 
       s.send_to_spm_wr_req.val @= s.state == STATE_DMA_MVIN_WRITE
       s.send_to_spm_wr_req.msg @= DmaSpmWriteReqType(
@@ -243,21 +277,7 @@ class DmaEngineRTL( Component ):
 
         elif s.state == STATE_DMA_MVOUT_RESP:
           if s.recv_from_spm_rd_resp.val & s.recv_from_spm_rd_resp.rdy:
-            # Pack the response from SPM into a 128-bit beat by left-shifting.
-            if s.word_idx_reg == b2( 0 ): # 1st word
-              s.beat_ff <<= concat( s.beat_reg[spm_data_nbits : spm_data_nbits<<2],
-                                    s.recv_from_spm_rd_resp.msg.data )
-            elif s.word_idx_reg == b2( 1 ):
-              s.beat_ff <<= concat( s.beat_reg[spm_data_nbits<<1 : spm_data_nbits<<2],
-                                    s.recv_from_spm_rd_resp.msg.data,
-                                    s.beat_reg[0:spm_data_nbits] )
-            elif s.word_idx_reg == b2( 2 ):
-              s.beat_ff <<= concat( s.beat_reg[(spm_data_nbits<<1)+spm_data_nbits : spm_data_nbits<<2],
-                                    s.recv_from_spm_rd_resp.msg.data,
-                                    s.beat_reg[0:spm_data_nbits<<1] )
-            else:
-              s.beat_ff <<= concat( s.recv_from_spm_rd_resp.msg.data,
-                                    s.beat_reg[0 : (spm_data_nbits<<1)+spm_data_nbits] )
+            s.beat_ff <<= s.beat_with_spm_resp
 
             s.spm_addr_ff   <<= s.spm_addr_reg + SpmAddrType( 1 )
             s.words_left_ff <<= s.words_left_reg - BytesType( 1 )

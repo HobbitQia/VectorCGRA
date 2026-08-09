@@ -5,6 +5,7 @@ DmaEngineRTL_test.py
 """
 
 from pymtl3 import *
+from pymtl3.passes.backends.verilog import VerilogTranslationPass
 
 from ..DmaEngineRTL import DmaEngineRTL, DMA_MVIN, DMA_MVOUT
 
@@ -124,6 +125,24 @@ def test_dma_mvin_one_beat():
     (10, 0x77777777),
     (11, 0x88888888),
   ]
+
+
+def test_dma_verilog_translation_has_exact_lane_slices(tmp_path):
+  """Translation must resolve beat slices without narrow-expression wrap."""
+  dut = DmaEngineRTL()
+  dut.elaborate()
+  output = tmp_path / "DmaEngineRTL.v"
+  dut.set_metadata(VerilogTranslationPass.enable, True)
+  dut.set_metadata(VerilogTranslationPass.explicit_file_name, str(output))
+  dut.apply(VerilogTranslationPass())
+
+  translated = output.read_text()
+  for assignment in (
+      "assign beat_word0 = beat_reg[31:0];",
+      "assign beat_word1 = beat_reg[63:32];",
+      "assign beat_word2 = beat_reg[95:64];",
+      "assign beat_word3 = beat_reg[127:96];"):
+    assert assignment in translated
 
 
 def test_dma_mvout_partial_beat():
