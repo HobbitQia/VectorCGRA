@@ -36,6 +36,7 @@ CgraPayloadType = mk_cgra_payload(DataType, DataAddrType, CtrlType,
                                   CtrlAddrType)
 CtrlPktType = mk_intra_cgra_pkt(1, 1, 4, CgraPayloadType)
 WordType = mk_bits(32)
+SpmReadReqType = mk_dma_spm_read_req(32)
 
 
 def make_dut():
@@ -61,6 +62,13 @@ def make_dut():
     is_multi_cgra=False)
 
   return dut
+
+
+def init_ext_spm(dut):
+  dut.recv_from_ext_spm_rd_req.val @= 0
+  dut.recv_from_ext_spm_rd_req.msg @= SpmReadReqType()
+  dut.send_to_ext_spm_rd_resp.rdy @= 1
+
 
 def issue_cpu_pkt(dut, pkt, max_cycles = 20):
   """
@@ -156,6 +164,7 @@ def test_cgra_dma_mvin_to_local_spm():
 
   dut.apply(DefaultPassGroup())
   dut.sim_reset()
+  init_ext_spm(dut)
 
   dut.cgra_id @= 0
   # Address range: [0:15]
@@ -214,6 +223,7 @@ def test_cgra_dma_mvout_from_local_spm():
 
   dut.apply(DefaultPassGroup())
   dut.sim_reset()
+  init_ext_spm(dut)
 
   # Pre-load SPM with data
   dut.cgra.data_mem.memory_wrapper[0].memory.regs[0] <<= DataType(0x11111111, 1, 0, 0)
@@ -267,6 +277,135 @@ def test_cgra_dma_mvout_from_local_spm():
     dut.sim_tick()
 
   assert done
+
+
+def test_external_spm_read():
+  dut = make_dut()
+
+  dut.apply(DefaultPassGroup())
+  dut.sim_reset()
+  init_ext_spm(dut)
+
+  dut.cgra_id @= 0
+  dut.address_lower @= DataAddrType(0)
+  dut.address_upper @= DataAddrType(15)
+  dut.recv_from_cpu_pkt.val @= 0
+  dut.recv_from_cpu_pkt.msg @= CtrlPktType()
+  dut.send_to_cpu_pkt.rdy @= 1
+  dut.send_to_dram_rd_req.rdy @= 1
+  dut.recv_from_dram_rd_resp.val @= 0
+  dut.recv_from_dram_rd_resp.msg @= 0
+  dut.send_to_dram_wr_req.rdy @= 1
+  dut.recv_from_dram_wr_resp.val @= 0
+  dut.recv_from_dram_wr_resp.msg @= 0
+
+  expected = 0x12345678
+  dut.cgra.data_mem.memory_wrapper[0].memory.regs[5] <<= DataType(expected, 1, 0, 0)
+  dut.sim_tick()
+
+  dut.recv_from_ext_spm_rd_req.val @= 1
+  dut.recv_from_ext_spm_rd_req.msg @= SpmReadReqType(5)
+  dut.send_to_ext_spm_rd_resp.rdy @= 0
+  dut.sim_eval_combinational()
+  assert dut.recv_from_ext_spm_rd_req.rdy
+  dut.sim_tick()
+  dut.recv_from_ext_spm_rd_req.val @= 0
+
+  for _ in range(20):
+    dut.sim_eval_combinational()
+    if dut.send_to_ext_spm_rd_resp.val:
+      break
+    dut.sim_tick()
+
+  assert dut.send_to_ext_spm_rd_resp.val
+  assert dut.send_to_ext_spm_rd_resp.msg.data == expected
+  dut.sim_tick()
+  dut.sim_eval_combinational()
+  assert dut.send_to_ext_spm_rd_resp.val
+  assert dut.send_to_ext_spm_rd_resp.msg.data == expected
+
+  dut.send_to_ext_spm_rd_resp.rdy @= 1
+  dut.sim_eval_combinational()
+  assert dut.send_to_ext_spm_rd_resp.val
+  dut.sim_tick()
+
+
+def test_internal_dma_spm_read_priority():
+  dut = make_dut()
+
+  dut.apply(DefaultPassGroup())
+  dut.sim_reset()
+  init_ext_spm(dut)
+
+  dut.cgra_id @= 0
+  dut.address_lower @= DataAddrType(0)
+  dut.address_upper @= DataAddrType(15)
+  dut.recv_from_cpu_pkt.val @= 0
+  dut.recv_from_cpu_pkt.msg @= CtrlPktType()
+  dut.send_to_cpu_pkt.rdy @= 1
+  dut.send_to_dram_rd_req.rdy @= 1
+  dut.recv_from_dram_rd_resp.val @= 0
+  dut.recv_from_dram_rd_resp.msg @= 0
+  dut.send_to_dram_wr_req.rdy @= 1
+  dut.recv_from_dram_wr_resp.val @= 0
+  dut.recv_from_dram_wr_resp.msg @= 0
+
+  words = [0x11111111, 0x22222222, 0x33333333, 0x44444444]
+  for i, word in enumerate(words):
+    dut.cgra.data_mem.memory_wrapper[0].memory.regs[i] <<= DataType(word, 1, 0, 0)
+  ext_data = 0x55555555
+  dut.cgra.data_mem.memory_wrapper[0].memory.regs[4] <<= DataType(ext_data, 1, 0, 0)
+  dut.sim_tick()
+
+  issue_dma_cmd(dut, CtrlPktType, CgraPayloadType, DataType, DataAddrType,
+                CMD_DMA_MVOUT, 0x2000, 0, 16, 0x55)
+
+  for _ in range(20):
+    dut.sim_eval_combinational()
+    if dut.dma.send_to_spm_rd_req.val:
+      break
+    dut.sim_tick()
+
+  assert dut.dma.send_to_spm_rd_req.val
+  dut.recv_from_ext_spm_rd_req.val @= 1
+  dut.recv_from_ext_spm_rd_req.msg @= SpmReadReqType(4)
+  dut.sim_eval_combinational()
+  assert dut.dma.send_to_spm_rd_req.rdy
+  assert not dut.recv_from_ext_spm_rd_req.rdy
+  dut.sim_tick()
+
+  ext_accepted = False
+  dma_data = None
+  for _ in range(40):
+    dut.sim_eval_combinational()
+    if not ext_accepted:
+      assert not dut.send_to_ext_spm_rd_resp.val
+      if dut.recv_from_ext_spm_rd_req.rdy:
+        ext_accepted = True
+    if dut.send_to_dram_wr_req.val:
+      dma_data = int(dut.send_to_dram_wr_req.msg.data)
+    dut.sim_tick()
+    if ext_accepted:
+      dut.recv_from_ext_spm_rd_req.val @= 0
+      break
+
+  assert ext_accepted
+
+  for _ in range(20):
+    dut.sim_eval_combinational()
+    if dut.send_to_dram_wr_req.val:
+      dma_data = int(dut.send_to_dram_wr_req.msg.data)
+    if dut.send_to_ext_spm_rd_resp.val:
+      break
+    dut.sim_tick()
+
+  expected_dma_data = int(concat(WordType(words[3]), WordType(words[2]),
+                                 WordType(words[1]), WordType(words[0])))
+  assert dma_data == expected_dma_data
+  assert dut.send_to_ext_spm_rd_resp.val
+  assert dut.send_to_ext_spm_rd_resp.msg.data == ext_data
+  dut.sim_tick()
+
 
 def test_gen_verilog_integrated_cgra_with_dma(cmdline_opts):
   """

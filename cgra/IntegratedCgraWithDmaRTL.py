@@ -81,7 +81,11 @@ class IntegratedCgraWithDmaRTL( Component ):
     DmaDramAddrType = DmaCmdType.get_field_type(kAttrDramAddr)
     DmaMemDataType  = DmaDataType.get_field_type(kAttrDramData)
     DmaMemMaskType  = DmaDataType.get_field_type(kAttrDramMask)
+    DmaSpmDataType = DmaDataType.get_field_type(kAttrSpmData)
+    DmaSpmAddrType = DmaCmdType.get_field_type(kAttrSpmAddr)
     DmaDramWrReqType = mk_dma_dram_wr_req(DmaDramAddrType.nbits, DmaMemDataType.nbits, DmaMemMaskType.nbits)
+    DmaSpmReadReqType = mk_dma_spm_read_req(DmaSpmAddrType.nbits)
+    DmaSpmReadRespType = mk_dma_spm_read_resp(DmaSpmDataType.nbits)
 
     # Existing CGRA-facing interfaces.
     # CGRA <-> CPU
@@ -115,6 +119,9 @@ class IntegratedCgraWithDmaRTL( Component ):
     s.send_to_dram_wr_req = SendIfcRTL(DmaDramWrReqType)
     s.recv_from_dram_wr_resp = RecvIfcRTL(mk_bits(1))
 
+    s.recv_from_ext_spm_rd_req = RecvIfcRTL(DmaSpmReadReqType)
+    s.send_to_ext_spm_rd_resp = SendIfcRTL(DmaSpmReadRespType)
+
     # Components.
 
     s.cgra = CgraTemplateRTL(CgraPayloadType,
@@ -136,8 +143,6 @@ class IntegratedCgraWithDmaRTL( Component ):
                              DmaDataType = DmaDataType,
                              DmaCmdType = DmaCmdType)
 
-    DmaSpmDataType = DmaDataType.get_field_type(kAttrSpmData)
-    DmaSpmAddrType = DmaCmdType.get_field_type(kAttrSpmAddr)
     DmaBytesType = DmaCmdType.get_field_type(kAttrNBytes)
     DmaTagType = DmaCmdType.get_field_type(kAttrDmaTag)
     s.dma = DmaEngineRTL(spm_data_nbits = DmaSpmDataType.nbits,
@@ -187,8 +192,50 @@ class IntegratedCgraWithDmaRTL( Component ):
     # DMA to controller-forwarded SPM connections.
 
     s.dma.send_to_spm_wr_req //= s.cgra.recv_from_dma_spm_wr_req
-    s.dma.send_to_spm_rd_req  //= s.cgra.recv_from_dma_spm_rd_req
-    s.dma.recv_from_spm_rd_resp //= s.cgra.send_to_dma_spm_rd_resp
+
+    s.spm_rd_busy = Wire(Bits1)
+    s.spm_rd_ext = Wire(Bits1)
+
+    @update
+    def arbitrate_spm_read():
+      s.cgra.recv_from_dma_spm_rd_req.val @= 0
+      s.cgra.recv_from_dma_spm_rd_req.msg @= DmaSpmReadReqType()
+      s.dma.send_to_spm_rd_req.rdy @= 0
+      s.recv_from_ext_spm_rd_req.rdy @= 0
+
+      s.dma.recv_from_spm_rd_resp.val @= 0
+      s.dma.recv_from_spm_rd_resp.msg @= s.cgra.send_to_dma_spm_rd_resp.msg
+      s.send_to_ext_spm_rd_resp.val @= 0
+      s.send_to_ext_spm_rd_resp.msg @= s.cgra.send_to_dma_spm_rd_resp.msg
+      s.cgra.send_to_dma_spm_rd_resp.rdy @= 0
+
+      if s.spm_rd_busy:
+        if s.spm_rd_ext:
+          s.send_to_ext_spm_rd_resp.val @= s.cgra.send_to_dma_spm_rd_resp.val
+          s.cgra.send_to_dma_spm_rd_resp.rdy @= s.send_to_ext_spm_rd_resp.rdy
+        else:
+          s.dma.recv_from_spm_rd_resp.val @= s.cgra.send_to_dma_spm_rd_resp.val
+          s.cgra.send_to_dma_spm_rd_resp.rdy @= s.dma.recv_from_spm_rd_resp.rdy
+      elif s.dma.send_to_spm_rd_req.val:
+        s.cgra.recv_from_dma_spm_rd_req.val @= 1
+        s.cgra.recv_from_dma_spm_rd_req.msg @= s.dma.send_to_spm_rd_req.msg
+        s.dma.send_to_spm_rd_req.rdy @= s.cgra.recv_from_dma_spm_rd_req.rdy
+      else:
+        s.cgra.recv_from_dma_spm_rd_req.val @= s.recv_from_ext_spm_rd_req.val
+        s.cgra.recv_from_dma_spm_rd_req.msg @= s.recv_from_ext_spm_rd_req.msg
+        s.recv_from_ext_spm_rd_req.rdy @= s.cgra.recv_from_dma_spm_rd_req.rdy
+
+    @update_ff
+    def track_spm_read():
+      if s.reset:
+        s.spm_rd_busy <<= 0
+        s.spm_rd_ext <<= 0
+      elif s.spm_rd_busy:
+        if s.cgra.send_to_dma_spm_rd_resp.val & s.cgra.send_to_dma_spm_rd_resp.rdy:
+          s.spm_rd_busy <<= 0
+      elif s.cgra.recv_from_dma_spm_rd_req.val & s.cgra.recv_from_dma_spm_rd_req.rdy:
+        s.spm_rd_busy <<= 1
+        s.spm_rd_ext <<= ~s.dma.send_to_spm_rd_req.val
 
   def line_trace(s):
     return f"{s.dma.line_trace()} || {s.cgra.line_trace()}"
