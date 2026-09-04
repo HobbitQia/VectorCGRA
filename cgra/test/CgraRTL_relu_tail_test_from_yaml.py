@@ -26,6 +26,7 @@ from ...validation.script_generator import ScriptFactory
 
 num_elements = 32
 data_base = 96
+expected_completes = 1
 values = [i - 16 for i in range(num_elements)]
 expected = [max(value, 0) for value in values]
 
@@ -90,11 +91,13 @@ def sim_relu_tail(cmdline_opts, mem_access_is_combinational):
   ]
   sink_packets = [
     common.IntraCgraPktType(
+      src=9,
+      dst=16,
       payload=common.CgraPayloadType(
         CMD_COMPLETE, common.DataType(0, 0, 0, 0)
       )
     )
-    for _ in tile_packets
+    for _ in range(expected_completes)
   ]
   sink_packets.extend(
     common.IntraCgraPktType(
