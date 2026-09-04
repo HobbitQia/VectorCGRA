@@ -45,6 +45,7 @@ Author : Bohan Cui
 import sys
 import os
 import glob
+from collections.abc import Mapping
 
 # Add project root to path to allow imports from lib
 # Get the absolute path of this file
@@ -77,6 +78,47 @@ from lib.opt_type import *
 # Global configuration for register cluster size (number of registers per cluster).
 # This can be overridden by ScriptFactory initialization.
 REG_CLUSTER_SIZE = 8
+
+def _apply_bindings(yaml_struct, bindings, addr_nbits):
+    bindings = {} if bindings is None else bindings
+    if not isinstance(bindings, Mapping):
+        raise TypeError("Bindings must be a mapping")
+    for name, value in bindings.items():
+        if not isinstance(name, str) or not name:
+            raise ValueError("Binding names must be non-empty strings")
+        if type(value) is not int:
+            raise TypeError(f"Binding '{name}' must be an integer")
+        if value < 0 or value >= (1 << addr_nbits):
+            raise ValueError(f"Binding '{name}' does not fit {addr_nbits} address bits")
+
+    symbols = set()
+    found = set()
+    for core in yaml_struct['array_config']['cores']:
+        for entry in core['entries']:
+            for instruction in entry['instructions']:
+                for operation in instruction['operations']:
+                    for operand in operation.get('src_operands', []):
+                        name = operand.get('operand')
+                        if _type(operand) != 'IMM' or name.startswith('#'):
+                            continue
+                        try:
+                            int(name)
+                            continue
+                        except ValueError:
+                            pass
+                        symbols.add(name)
+                        if name in bindings:
+                            operand['operand'] = f"#{bindings[name]}"
+                            found.add(name)
+
+    missing = set(bindings) - found
+    if missing:
+        names = ", ".join(sorted(missing))
+        raise ValueError(f"Bindings not found in compiler YAML: {names}")
+    unbound = symbols - found
+    if unbound:
+        names = ", ".join(sorted(unbound))
+        raise ValueError(f"Compiler YAML symbols require bindings: {names}")
 
 def _resolve_yaml_path(path):
     candidate = os.path.expanduser(str(path))
@@ -937,6 +979,7 @@ class ScriptFactory:
                  CtrlAddrType,
                  DataAddrType,
                  num_registers_per_reg_bank=None,
+                 bindings=None,
                  **kwargs):
         # Allow overriding the default register cluster size.
         global REG_CLUSTER_SIZE
@@ -944,6 +987,7 @@ class ScriptFactory:
             REG_CLUSTER_SIZE = int(num_registers_per_reg_bank)
         resolved_path = _resolve_yaml_path(path)
         self.yaml_struct = yaml.load(open(resolved_path, 'r'), Loader=yaml.FullLoader)
+        _apply_bindings(self.yaml_struct, bindings, DataAddrType.nbits)
         self.path = resolved_path
         self.CtrlType = CtrlType
         self.IntraCgraPktType = IntraCgraPktType
