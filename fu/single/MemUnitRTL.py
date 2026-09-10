@@ -251,7 +251,7 @@ class MemUnitRTL(Component):
 
     @update_ff
     def update_vector_factor_counter():
-      if s.reset:
+      if s.reset | s.clear:
         s.vector_factor_counter <<= 0
       else:
         if s.recv_opt.val:
@@ -267,7 +267,7 @@ class MemUnitRTL(Component):
 
     @update_ff
     def update_already_sent_raddr():
-      if s.reset:
+      if s.reset | s.clear:
         s.already_sent_raddr <<= 0
       else:
         if ~s.recv_opt.val:
@@ -290,4 +290,3 @@ class MemUnitRTL(Component):
     out_str = ",".join([str(x.msg) for x in s.send_out])
     recv_str = ",".join([str(x.msg) for x in s.recv_in])
     return f'[recv: {recv_str}] {opt_str} (const: {s.recv_const.msg}) ] = [out: {out_str}] (s.recv_opt.rdy: {s.recv_opt.rdy}, {OPT_SYMBOL_DICT[s.recv_opt.msg.operation]}, send[0].val: {s.send_out[0].val}) <{s.recv_const.val}|{s.recv_const.msg}>'
-

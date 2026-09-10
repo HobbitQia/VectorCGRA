@@ -14,7 +14,7 @@ from pymtl3.stdlib.primitive import RegisterFile
 from ...lib.basic.en_rdy.ifcs import SendIfcRTL
 from ...lib.basic.val_rdy.ifcs import ValRdyRecvIfcRTL as RecvIfcRTL
 from ...lib.basic.val_rdy.ifcs import ValRdySendIfcRTL as SendIfcRTL
-from ...lib.basic.val_rdy.queues import NormalQueueRTL
+from ...lib.basic.val_rdy.queues import NormalQueueRTL, NormalQueueWithClearRTL
 from ...lib.cmd_type import *
 from ...lib.opt_type import *
 from ...lib.util.common import *
@@ -63,11 +63,12 @@ class CtrlMemDynamicRTL(Component):
     s.cgra_id = InPort(mk_bits(max(1, clog2(num_cgras))))
     s.tile_id = InPort(mk_bits(clog2(num_tiles + 1)))
     s.ctrl_addr_outport = OutPort(CtrlAddrType)
+    s.rearm = OutPort(b1)
 
     # Components.
     s.reg_file = RegisterFile(CtrlType, ctrl_mem_size, 1, 1)
     s.recv_pkt_from_controller_queue = NormalQueueRTL(IntraCgraPktType)
-    s.recv_from_element_queue = NormalQueueRTL(CgraPayloadType)
+    s.recv_from_element_queue = NormalQueueWithClearRTL(CgraPayloadType)
     s.times = Wire(TimeType)
     s.start_iterate_ctrl = Wire(b1)
     s.sent_complete = Wire(b1)
@@ -91,6 +92,13 @@ class CtrlMemDynamicRTL(Component):
     # Connections.
     s.recv_pkt_from_controller //= s.recv_pkt_from_controller_queue.recv
     s.recv_from_element //= s.recv_from_element_queue.recv
+    s.recv_from_element_queue.clear //= s.rearm
+
+    @update
+    def retire_rearm():
+      s.rearm @= s.recv_pkt_from_controller_queue.send.val & \
+                 s.recv_pkt_from_controller_queue.send.rdy & \
+                 (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_REARM)
 
     @update
     def update_msg():
@@ -137,6 +145,7 @@ class CtrlMemDynamicRTL(Component):
             (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_CONFIG_LOOP_STEP) | \
             (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_CONFIG_GEP_STRIDE) | \
             (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_UPDATE_COUNTER_SHADOW_VALUE) | \
+            (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_REARM) | \
             (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_RESET_LEAF_COUNTER)):
         s.send_to_element.msg @= s.recv_pkt_from_controller_queue.send.msg.payload
         s.send_to_element.val @= 1
@@ -147,6 +156,7 @@ class CtrlMemDynamicRTL(Component):
          (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_CONFIG_PROLOGUE_ROUTING_CROSSBAR) | \
          (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_LAUNCH) | \
          (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_TERMINATE) | \
+         (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_REARM) | \
          (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_PAUSE) | \
          (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_PRESERVE) | \
          (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_RESUME) | \
@@ -179,7 +189,7 @@ class CtrlMemDynamicRTL(Component):
       s.send_pkt_to_controller.val @= 0
       s.send_pkt_to_controller.msg @= IntraCgraPktType(0, num_tiles, 0, 0, 0, 0, 0, 0, 0, 0, CgraPayloadType(CMD_COMPLETE, 0, 0, 0, 0))
       s.recv_from_element_queue.send.rdy @= 0
-      if s.start_iterate_ctrl == b1(1):
+      if s.start_iterate_ctrl & ~s.rearm:
         if s.recv_from_element_queue.send.val & (~s.sent_complete):
           s.send_pkt_to_controller.msg @= \
               IntraCgraPktType(zext(s.tile_id, IntraPktTileIdType), num_tiles, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -206,7 +216,7 @@ class CtrlMemDynamicRTL(Component):
         else:
           s.send_ctrl.val @= 1
       if s.recv_pkt_from_controller_queue.send.val & \
-          (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_TERMINATE):
+          ((s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_TERMINATE) | s.rearm):
         s.send_ctrl.val @= b1(0)
 
     @update
@@ -231,7 +241,7 @@ class CtrlMemDynamicRTL(Component):
 
     @update_ff
     def update_whether_we_can_iterate_ctrl():
-      if s.reset:
+      if s.reset | s.rearm:
         s.start_iterate_ctrl <<= 0
       else:
         if s.recv_pkt_from_controller_queue.send.val:
@@ -245,7 +255,7 @@ class CtrlMemDynamicRTL(Component):
 
     @update_ff
     def issue_complete():
-      if s.reset:
+      if s.reset | s.rearm:
         s.sent_complete <<= 0
       else:
         if s.send_pkt_to_controller.val & \
@@ -261,6 +271,11 @@ class CtrlMemDynamicRTL(Component):
       if s.reset:
         s.times <<= 0
         s.reg_file.raddr[0] <<= 0
+        for i in range(ctrl_mem_size):
+          s.prologue_count_reg_fu[i] <<= 0
+      elif s.rearm:
+        s.times <<= 0
+        s.reg_file.raddr[0] <<= s.ctrl_count_lower_bound
         for i in range(ctrl_mem_size):
           s.prologue_count_reg_fu[i] <<= 0
       elif s.recv_pkt_from_controller_queue.send.val & (s.recv_pkt_from_controller_queue.send.msg.payload.cmd == CMD_CONFIG_CTRL_LOWER_BOUND):
@@ -347,4 +362,3 @@ class CtrlMemDynamicRTL(Component):
   def line_trace(s):
     config_mem_str  = "|".join([str(data) for data in s.reg_file.regs])
     return f'reg_file.raddr[0]: {s.reg_file.raddr[0]} || sent_complete: {s.sent_complete} || times: {s.times} || total_ctrl_steps_val: {s.total_ctrl_steps_val} || start_iterate_ctrl: {s.start_iterate_ctrl}|| recv_pkt: {s.recv_pkt_from_controller.msg}.recv_rdy:{s.recv_pkt_from_controller.rdy} || control signal content: [{config_mem_str}] || ctrl_out: {s.send_ctrl.msg}, send_ctrl.val: {s.send_ctrl.val}, send_ctrl.rdy: {s.send_ctrl.rdy}, send_pkt.msg.payload.cmd: {s.send_pkt_to_controller.msg.payload.cmd}, send_pkt.val: {s.send_pkt_to_controller.val}, ctrl_count_per_iter_val: {s.ctrl_count_per_iter_val}, ctrl_count_lower_bound: {s.ctrl_count_lower_bound}'
-

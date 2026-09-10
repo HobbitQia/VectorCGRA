@@ -8,6 +8,8 @@ Author : Shangkun Li
   Date : January 21, 2026
 """
 
+import pytest
+
 from pymtl3 import *
 from ..LoopCounterRTL import LoopCounterRTL
 from ....lib.basic.val_rdy.SourceRTL import SourceRTL as TestSrcRTL
@@ -88,6 +90,58 @@ def run_sim(test_harness, max_cycles = 100):
 #-------------------------------------------------------------------------
 # Test cases
 #-------------------------------------------------------------------------
+
+def test_rearm_keeps_loop_config():
+    DataType = mk_data(32, 1)
+    CtrlType = mk_ctrl(4, 2, 4, 2)
+    PayloadType = mk_cgra_payload(DataType, mk_bits(3), CtrlType, mk_bits(3))
+    PacketType = mk_intra_cgra_pkt(1, 1, 1, PayloadType)
+    dut = LoopCounterRTL(PacketType, 4, 2)
+    dut.apply(DefaultPassGroup())
+    dut.clear @= 0
+    dut.ctrl_addr_inport @= 1
+    dut.recv_opt.val @= 0
+    dut.recv_opt.msg @= CtrlType(OPT_LOOP_COUNT)
+    dut.recv_const.val @= 0
+    dut.recv_const.msg @= DataType()
+    dut.recv_from_ctrl_mem.val @= 0
+    dut.recv_from_ctrl_mem.msg @= PayloadType()
+    dut.send_to_ctrl_mem.rdy @= 1
+    for port in dut.recv_in:
+        port.val @= 0
+        port.msg @= DataType()
+    for port in dut.send_out:
+        port.rdy @= 1
+    dut.sim_reset()
+    for cmd, value in ((CMD_CONFIG_LOOP_LOWER, 3), (CMD_CONFIG_LOOP_UPPER, 7), (CMD_CONFIG_LOOP_STEP, 2)):
+        dut.recv_from_ctrl_mem.val @= 1
+        dut.recv_from_ctrl_mem.msg @= PayloadType(cmd, DataType(value, 1), ctrl_addr=1)
+        dut.sim_tick()
+    dut.recv_from_ctrl_mem.val @= 0
+    for run in range(2):
+        dut.recv_opt.val @= 1
+        for value in (3, 5, 7):
+            dut.sim_eval_combinational()
+            if not dut.send_out[0].val or dut.send_out[0].msg.payload != value:
+                pytest.fail(f"Run {run}: expected counter {value}, got {dut.send_out[0].msg}")
+            dut.sim_tick()
+        dut.recv_opt.val @= 0
+        if not dut.already_done[1]:
+            pytest.fail("Loop completion was not recorded")
+        dut.clear @= 1
+        dut.recv_from_ctrl_mem.val @= 1
+        dut.recv_from_ctrl_mem.msg @= PayloadType(CMD_REARM)
+        dut.sim_tick()
+        dut.clear @= 0
+        dut.recv_from_ctrl_mem.val @= 0
+        actual = tuple(int(field[1].payload) for field in (dut.leaf_lower_bound, dut.leaf_upper_bound, dut.leaf_step, dut.leaf_current_value))
+        if actual != (3, 7, 2, 3) or dut.already_done[1]:
+            pytest.fail(f"REARM changed loop configuration or retained completion: {actual}")
+    dut.clear @= 1
+    dut.sim_tick()
+    if dut.leaf_upper_bound[1].payload != 0:
+        pytest.fail("Ordinary clear no longer clears loop configuration")
+
 
 def test_leaf_counter_basic():
     """Test basic counter: for(i=0; i<5; i++) at ctrl_addr=0"""

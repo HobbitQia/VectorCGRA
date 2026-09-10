@@ -65,6 +65,7 @@ class LoopCounterRTL(Fu):
     
     # Update triggers from LC (CMD).
     s.cmd_reset_counter = Wire(1)
+    s.cmd_rearm = Wire(1)
     s.cmd_update_shadow = Wire(1)
     s.cmd_config_lower = Wire(1)
     s.cmd_config_upper = Wire(1)
@@ -95,6 +96,7 @@ class LoopCounterRTL(Fu):
       
       # CMD signal reset
       s.cmd_reset_counter @= b1(0)
+      s.cmd_rearm @= b1(0)
       s.cmd_update_shadow @= b1(0)
       s.cmd_config_lower @= b1(0)
       s.cmd_config_upper @= b1(0)
@@ -154,6 +156,8 @@ class LoopCounterRTL(Fu):
         
         if s.recv_from_ctrl_mem.msg.cmd == CMD_RESET_LEAF_COUNTER:
           s.cmd_reset_counter @= b1(1)
+        elif s.recv_from_ctrl_mem.msg.cmd == CMD_REARM:
+          s.cmd_rearm @= b1(1)
         
         elif s.recv_from_ctrl_mem.msg.cmd == CMD_UPDATE_COUNTER_SHADOW_VALUE:
           s.cmd_update_shadow @= b1(1)
@@ -171,12 +175,15 @@ class LoopCounterRTL(Fu):
     
     @update_ff
     def update_leaf_counters():
-      if s.reset | s.clear:
+      if s.reset | (s.clear & ~s.cmd_rearm):
         for i in range(ctrl_mem_size):
           s.leaf_lower_bound[i] <<= s.DataType(0, 0)
           s.leaf_upper_bound[i] <<= s.DataType(0, 0)
           s.leaf_step[i] <<= s.DataType(0, 0)
           s.leaf_current_value[i] <<= s.DataType(0, 0)
+      elif s.cmd_rearm:
+        for i in range(ctrl_mem_size):
+          s.leaf_current_value[i] <<= s.leaf_lower_bound[i]
       else:
         # CMD Config Updates
         if s.cmd_config_lower:
@@ -205,7 +212,7 @@ class LoopCounterRTL(Fu):
     
     @update_ff
     def update_shadow_registers():
-      if s.reset | s.clear:
+      if s.reset | s.clear | s.cmd_rearm:
         for i in range(ctrl_mem_size):
           s.shadow_regs[i] <<= s.DataType(0, 0)
           s.shadow_valid[i] <<= b1(0)
@@ -218,7 +225,7 @@ class LoopCounterRTL(Fu):
     
     @update_ff
     def update_already_done():
-      if s.reset | s.clear:
+      if s.reset | s.clear | s.cmd_rearm:
         for i in range(ctrl_mem_size):
           s.already_done[i] <<= b1(0)
       else:

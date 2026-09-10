@@ -30,7 +30,7 @@ from ..mem.ctrl.CtrlMemDynamicRTL import CtrlMemDynamicRTL
 from ..mem.register_cluster.RegisterClusterRTL import RegisterClusterRTL
 from ..noc.CrossbarRTL import CrossbarRTL
 from ..noc.LinkOrRTL import LinkOrRTL
-from ..noc.PyOCN.pymtl3_net.channel.ChannelRTL import ChannelRTL
+from ..noc.ChannelWithClearRTL import ChannelWithClearRTL
 from ..rf.RegisterRTL import RegisterRTL
 from ..lib.util.data_struct_attr import *
 
@@ -116,7 +116,7 @@ class TileRTL(Component):
 
     # The `tile_in_channel` indicates the outport channels that are
     # connected to the next tiles.
-    s.tile_in_channel = [ChannelRTL(DataType, latency = 1)
+    s.tile_in_channel = [ChannelWithClearRTL(DataType, latency = 1)
                          for _ in range(num_tile_inports)]
 
     # The `tile_out_or_link` would "or" the outports of the
@@ -128,6 +128,7 @@ class TileRTL(Component):
     s.element_done = Wire(1)
     s.fu_crossbar_done = Wire(1)
     s.routing_crossbar_done = Wire(1)
+    s.rearm_pending = Wire(1)
 
     s.cgra_id = InPort(mk_bits(max(1, clog2(num_cgras))))
     s.tile_id = InPort(mk_bits(clog2(num_tiles + 1)))
@@ -231,12 +232,22 @@ class TileRTL(Component):
           s.element.recv_in[i]
       s.register_cluster.inport_opt //= s.ctrl_mem.send_ctrl.msg
 
-    # Clear ports are only useful during context switching.
-    # We connect to 0 to make sure they have drivers.
+    # REARM retires locally before a following constant or launch is accepted.
     for i in range(len(FuList)):
-      s.element.clear[i] //= 0
-    s.fu_crossbar.clear //= 0
-    s.routing_crossbar.clear //= 0
+      s.element.clear[i] //= s.ctrl_mem.rearm
+    s.fu_crossbar.clear //= s.ctrl_mem.rearm
+    s.routing_crossbar.clear //= s.ctrl_mem.rearm
+    s.const_mem.clear //= s.ctrl_mem.rearm
+    for i in range(num_tile_inports):
+      s.tile_in_channel[i].clear //= s.ctrl_mem.rearm
+
+    @update_ff
+    def order_rearm():
+      if s.reset | s.ctrl_mem.rearm:
+        s.rearm_pending <<= 0
+      elif s.recv_from_controller_pkt.val & s.recv_from_controller_pkt.rdy & \
+           (s.recv_from_controller_pkt.msg.payload.cmd == CMD_REARM):
+        s.rearm_pending <<= 1
 
     @update
     def feed_pkt():
@@ -253,9 +264,11 @@ class TileRTL(Component):
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_CONFIG_PROLOGUE_ROUTING_CROSSBAR) | \
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_CONFIG_TOTAL_CTRL_COUNT) | \
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_CONFIG_COUNT_PER_ITER) | \
+            (s.recv_from_controller_pkt.msg.payload.cmd == CMD_CONFIG_CTRL_LOWER_BOUND) | \
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_GLOBAL_REDUCE_ADD_RESPONSE) | \
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_GLOBAL_REDUCE_MUL_RESPONSE) | \
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_LAUNCH) | \
+            (s.recv_from_controller_pkt.msg.payload.cmd == CMD_REARM) | \
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_CONFIG_LOOP_LOWER) | \
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_CONFIG_LOOP_UPPER) | \
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_CONFIG_LOOP_STEP) | \
@@ -267,6 +280,11 @@ class TileRTL(Component):
             s.const_mem.recv_const.val @= 1
             s.const_mem.recv_const.msg @= s.recv_from_controller_pkt.msg.payload.data
             s.recv_from_controller_pkt.rdy @= s.const_mem.recv_const.rdy
+
+        if s.rearm_pending:
+            s.ctrl_mem.recv_pkt_from_controller.val @= 0
+            s.const_mem.recv_const.val @= 0
+            s.recv_from_controller_pkt.rdy @= 0
 
     @update
     def update_send_out_signal():
@@ -305,7 +323,7 @@ class TileRTL(Component):
     # Updates the signals indicating whether certain modules already done their jobs.
     @update_ff
     def already_done():
-      if s.reset | s.ctrl_mem.send_ctrl.rdy:
+      if s.reset | s.ctrl_mem.send_ctrl.rdy | s.ctrl_mem.rearm:
         s.element_done <<= 0
         s.fu_crossbar_done <<= 0
         s.routing_crossbar_done <<= 0

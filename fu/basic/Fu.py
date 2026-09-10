@@ -47,7 +47,7 @@ class Fu(Component):
     s.send_to_ctrl_mem = SendIfcRTL(s.CgraPayloadType)
     s.recv_from_ctrl_mem = RecvIfcRTL(s.CgraPayloadType)
 
-    # Redundant interface, only used by PhiRTL.
+    # Restores per-execution state without changing configuration.
     s.clear = InPort(b1)
 
     # Components.
@@ -77,7 +77,7 @@ class Fu(Component):
 
     @update_ff
     def proceed_latency():
-      if s.recv_opt.msg.operation == OPT_START:
+      if s.reset | s.clear | (s.recv_opt.msg.operation == OPT_START):
         s.latency <<= LatencyType(0)
       elif s.latency == latency - 1:
         s.latency <<= LatencyType(0)
@@ -94,7 +94,7 @@ class Fu(Component):
 
     @update_ff
     def update_vector_factor_counter():
-      if s.reset:
+      if s.reset | s.clear:
         s.vector_factor_counter <<= 0
       else:
         if s.recv_opt.val:

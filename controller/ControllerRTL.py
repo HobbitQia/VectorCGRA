@@ -479,6 +479,7 @@ class ControllerRTL(Component):
              (s.recv_from_inter_cgra_noc.msg.payload.cmd == CMD_RESUME) | \
              (s.recv_from_inter_cgra_noc.msg.payload.cmd == CMD_RECORD_PHI_ADDR) | \
              (s.recv_from_inter_cgra_noc.msg.payload.cmd == CMD_TERMINATE) | \
+             (s.recv_from_inter_cgra_noc.msg.payload.cmd == CMD_REARM) | \
              (s.recv_from_inter_cgra_noc.msg.payload.cmd == CMD_LAUNCH) | \
              (s.recv_from_inter_cgra_noc.msg.payload.cmd == CMD_CONFIG_LOOP_LOWER) | \
              (s.recv_from_inter_cgra_noc.msg.payload.cmd == CMD_CONFIG_LOOP_UPPER) | \

@@ -14,7 +14,7 @@ from pymtl3 import *
 
 # Total number of commands that are supported/recognized by controller.
 # Needs to be updated once more commands are added/supported.
-NUM_CMDS = 52
+NUM_CMDS = 53
 
 CMD_LAUNCH                           = 0
 CMD_PAUSE                            = 1
@@ -79,6 +79,7 @@ CMD_DMA_CONFIG_TAG                   = 48  # Configures tag of the DMA command
 CMD_DMA_MVIN                         = 49  # Issues a DMA_MVIN command
 CMD_DMA_MVOUT                        = 50  # Issues a DMA_MVOUT command
 CMD_DMA_DONE                         = 51  # Signals that the DMA command is complete
+CMD_REARM                            = 52  # Clears completed execution state while retaining kernel configuration
 
 CMD_SYMBOL_DICT = {
   CMD_LAUNCH:                           "(LAUNCH_KERNEL)",
@@ -133,5 +134,5 @@ CMD_SYMBOL_DICT = {
   CMD_DMA_MVIN:                         "(DMA_MVIN)",
   CMD_DMA_MVOUT:                        "(DMA_MVOUT)",
   CMD_DMA_DONE:                         "(DMA_DONE)",
+  CMD_REARM:                            "(REARM_EXECUTION)",
 }
-

@@ -152,7 +152,7 @@ class SelRTL(Component):
 
     @update_ff
     def update_vector_factor_counter():
-      if s.reset:
+      if s.reset | s.clear:
         s.vector_factor_counter <<= 0
       else:
         if s.recv_opt.val:
