@@ -129,6 +129,7 @@ class TileRTL(Component):
     s.fu_crossbar_done = Wire(1)
     s.routing_crossbar_done = Wire(1)
     s.rearm_pending = Wire(1)
+    s.hold_data = Wire(1)
 
     s.cgra_id = InPort(mk_bits(max(1, clog2(num_cgras))))
     s.tile_id = InPort(mk_bits(clog2(num_tiles + 1)))
@@ -185,8 +186,14 @@ class TileRTL(Component):
     # The data from other tiles should be connected to the
     # `routing_crossbar`.
     for i in range(num_tile_inports):
-      s.recv_data[i] //= s.tile_in_channel[i].recv
+      s.recv_data[i].msg //= s.tile_in_channel[i].recv.msg
       s.tile_in_channel[i].send //= s.routing_crossbar.recv_data[i]
+
+    @update
+    def isolate_inputs():
+      for i in range(num_tile_inports):
+        s.tile_in_channel[i].recv.val @= s.recv_data[i].val & ~(s.hold_data | s.ctrl_mem.rearm)
+        s.recv_data[i].rdy @= s.tile_in_channel[i].recv.rdy & ~(s.hold_data | s.ctrl_mem.rearm)
 
     # Register banks are connected to the routing crossbar as additional
     # inports, enabling reg -> outport DATA_MOV without occupying the FU.
@@ -248,6 +255,17 @@ class TileRTL(Component):
       elif s.recv_from_controller_pkt.val & s.recv_from_controller_pkt.rdy & \
            (s.recv_from_controller_pkt.msg.payload.cmd == CMD_REARM):
         s.rearm_pending <<= 1
+
+    # Old neighbors must not refill cleared channels before their own REARM.
+    @update_ff
+    def hold_inputs():
+      if s.reset:
+        s.hold_data <<= 0
+      elif s.ctrl_mem.rearm:
+        s.hold_data <<= 1
+      elif s.recv_from_controller_pkt.val & s.recv_from_controller_pkt.rdy & \
+           (s.recv_from_controller_pkt.msg.payload.cmd == CMD_LAUNCH):
+        s.hold_data <<= 0
 
     @update
     def feed_pkt():
