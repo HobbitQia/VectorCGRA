@@ -37,7 +37,20 @@ class TestHarness(Component):
     s.reg_bank.inport_valid[PORT_INDEX_FU_CROSSBAR] //= 1
     s.reg_bank.inport_valid[PORT_INDEX_CONST] //= 1
     s.reg_bank.inport_opt //= src_opt
-    s.reg_bank.send_data //= s.sink.recv
+    s.reg_bank.send_data_to_fu //= s.sink.recv
+    # The routing-crossbar read path is unused in this test.
+    s.reg_bank.send_data_to_xbar.rdy //= 0
+    s.reg_bank.clear //= 0
+
+    # Mimics the tile's per-step completion for this FU-only read
+    # config: the step completes as soon as the FU path accepts,
+    # consuming the token and committing any parked skid-buffer write.
+    s.ctrl_proceed = Wire(1)
+    s.reg_bank.inport_ctrl_proceed //= s.ctrl_proceed
+
+    @update
+    def emulate_step_completion():
+      s.ctrl_proceed @= s.reg_bank.send_data_to_fu.val & s.reg_bank.send_data_to_fu.rdy
 
   def done(s):
     return s.sink.done()
@@ -98,6 +111,13 @@ def test_reg_bank():
   src_opt.read_reg_idx[reg_bank_id] = b4(15) # read after write
 
   write_data = [DataType(10, 1), DataType(11, 1), DataType(12, 1)]
+  # The first read happens before reg[15] is ever written ("armed"), so it
+  # keeps the legacy always-valid behavior and returns the default value.
+  # Once written, token discipline applies (issue #321): each write
+  # deposits a token that is delivered exactly once, and the next write is
+  # only accepted after the previous token has been consumed, so the
+  # write/read pattern alternates (write 11 from the FU-crossbar inport,
+  # i.e., write_reg_from=2; deliver 11; write 11 again; deliver again).
   expected_read_data = [DataType(0, 0), DataType(11, 1), DataType(11, 1)]
 
   th = TestHarness(DataType, ConfigType, reg_bank_id, num_registers_per_reg_bank,

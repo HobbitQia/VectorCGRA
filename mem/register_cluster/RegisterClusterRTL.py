@@ -16,19 +16,6 @@ from ...lib.basic.val_rdy.ifcs import ValRdySendIfcRTL as SendIfcRTL
 from ...lib.opt_type import *
 from ...lib.util.common import *
 
-# Canonical definitions live in common.py; keep local aliases to minimize churn.
-from ...lib.util.common import (
-  READ_TOWARDS_NOTHING,
-  READ_TOWARDS_FU,
-  READ_TOWARDS_ROUTING_XBAR,
-  READ_TOWARDS_BOTH,
-)
-
-kReadTowardsNothing     = READ_TOWARDS_NOTHING
-kReadTowardsFu          = READ_TOWARDS_FU
-kReadTowardsRoutingXbar = READ_TOWARDS_ROUTING_XBAR
-kReadTowardsBoth        = READ_TOWARDS_BOTH
-
 class RegisterClusterRTL(Component):
 
   def construct(s, DataType, CtrlType, num_reg_banks,
@@ -36,6 +23,11 @@ class RegisterClusterRTL(Component):
 
     # Interface
     s.inport_opt = InPort(CtrlType)
+    # Pulses when the current ctrl step completes; consumes the tokens
+    # of the registers read by the completing step.
+    s.inport_ctrl_proceed = InPort(mk_bits(1))
+    # Clears the banks' token bookkeeping on task switching.
+    s.clear = InPort(mk_bits(1))
     s.recv_data_from_routing_crossbar = [RecvIfcRTL(DataType) for _ in range(num_reg_banks)]
     s.recv_data_from_fu_crossbar = [RecvIfcRTL(DataType) for _ in range(num_reg_banks)]
     s.recv_data_from_const = [RecvIfcRTL(DataType) for _ in range(num_reg_banks)]
@@ -50,12 +42,17 @@ class RegisterClusterRTL(Component):
     # Connections.
     for i in range(num_reg_banks):
       s.reg_bank[i].inport_opt //= s.inport_opt
+      s.reg_bank[i].inport_ctrl_proceed //= s.inport_ctrl_proceed
+      s.reg_bank[i].clear //= s.clear
       s.reg_bank[i].inport_wdata[PORT_INDEX_ROUTING_CROSSBAR] //= s.recv_data_from_routing_crossbar[i].msg
       s.reg_bank[i].inport_wdata[PORT_INDEX_FU_CROSSBAR] //= s.recv_data_from_fu_crossbar[i].msg
       s.reg_bank[i].inport_wdata[PORT_INDEX_CONST] //= s.recv_data_from_const[i].msg
-      s.reg_bank[i].inport_valid[PORT_INDEX_ROUTING_CROSSBAR] //= s.recv_data_from_routing_crossbar[i].val
       s.reg_bank[i].inport_valid[PORT_INDEX_FU_CROSSBAR] //= s.recv_data_from_fu_crossbar[i].val
       s.reg_bank[i].inport_valid[PORT_INDEX_CONST] //= s.recv_data_from_const[i].val
+      # The direct reg -> routing_crossbar read path is a plain val/rdy
+      # handshake owned by the bank (val is only asserted while the
+      # selected register holds an unconsumed token).
+      s.reg_bank[i].send_data_to_xbar //= s.send_data_to_routing_crossbar[i]
 
     @update
     def update_msgs_signals():
@@ -66,45 +63,45 @@ class RegisterClusterRTL(Component):
         s.recv_data_from_fu_crossbar[i].rdy @= 0
         s.recv_data_from_const[i].rdy @= 0
         s.send_data_to_fu[i].val @= 0
-        s.send_data_to_routing_crossbar[i].msg @= DataType()
-        s.send_data_to_routing_crossbar[i].val @= 0
 
       for i in range(num_reg_banks):
+        lane_used = b1(0)
+        for j in range(num_reg_banks):
+          lane_used = lane_used | (s.inport_opt.fu_in[j] == i + 1)
         read_towards = s.inport_opt.read_reg_towards[i]
-        # Checks if data should go towards FU (1 or 3)
-        reg_towards_fu = (read_towards == kReadTowardsFu) | (read_towards == kReadTowardsBoth)
-        # Checks if data should go towards routing_xbar (2 or 3)
-        reg_towards_routing_xbar = (read_towards == kReadTowardsRoutingXbar) | (read_towards == kReadTowardsBoth)
+        reg_towards_fu = (read_towards == READ_TOWARDS_FU) | (read_towards == READ_TOWARDS_BOTH)
+        routing_write_rdy = (s.inport_opt.write_reg_from[i] != PORT_ROUTING_CROSSBAR) | s.reg_bank[i].outport_wr_rdy
 
-        # Data from register bank has priority over routing crossbar data for FU path.
-        # Note: reg_bank[i].send_data.val is set based on read_reg_towards in RegisterBankRTL.
-        if s.reg_bank[i].send_data.val & reg_towards_fu:
+        # Data from register bank has priority over routing crossbar data
+        # for FU path. Note: the bank asserts send_data_to_fu.val only when
+        # read_reg_towards includes FU and the selected register either
+        # holds an unconsumed token or has never been written (legacy
+        # default-token source), so no additional direction check is
+        # needed here.
+        if s.reg_bank[i].send_data_to_fu.val:
           s.send_data_to_fu[i].msg @= \
-            s.reg_bank[i].send_data.msg
+            s.reg_bank[i].send_data_to_fu.msg
         elif s.recv_data_from_routing_crossbar[i].val:
           s.send_data_to_fu[i].msg @= \
             s.recv_data_from_routing_crossbar[i].msg
 
         s.send_data_to_fu[i].val @= \
-            s.recv_data_from_routing_crossbar[i].val | \
-            (s.reg_bank[i].send_data.val & reg_towards_fu)
-        s.reg_bank[i].send_data.rdy @= s.send_data_to_fu[i].rdy
+            (s.recv_data_from_routing_crossbar[i].val & routing_write_rdy) | \
+            s.reg_bank[i].send_data_to_fu.val
+        s.reg_bank[i].send_data_to_fu.rdy @= s.send_data_to_fu[i].rdy
 
-        s.recv_data_from_routing_crossbar[i].rdy @= (s.inport_opt.operation == OPT_NAH) | \
-                                                    (s.inport_opt.fu_in[i] == 0) | \
-                                                    reg_towards_fu | \
-                                                    ((s.inport_opt.write_reg_from[i] == PORT_ROUTING_CROSSBAR) & \
-                                                     (s.inport_opt.operation == OPT_NAH)) | \
-                                                    s.send_data_to_fu[i].rdy
-        s.recv_data_from_fu_crossbar[i].rdy @= 1
-        s.recv_data_from_const[i].rdy @= 1
-
-        # Drive the direct reg -> routing_crossbar path.
-        if reg_towards_routing_xbar:
-          s.send_data_to_routing_crossbar[i].msg @= s.reg_bank[i].send_data.msg
-          s.send_data_to_routing_crossbar[i].val @= 1
+        # Unused FU inputs and register operands can drain routing data;
+        # a selected register write must also be accepted by the bank.
+        s.recv_data_from_routing_crossbar[i].rdy @= routing_write_rdy & \
+            ((s.inport_opt.operation == OPT_NAH) | ~lane_used | \
+             reg_towards_fu | s.send_data_to_fu[i].rdy)
+        s.reg_bank[i].inport_valid[PORT_INDEX_ROUTING_CROSSBAR] @= \
+            s.recv_data_from_routing_crossbar[i].val & s.recv_data_from_routing_crossbar[i].rdy
+        s.recv_data_from_fu_crossbar[i].rdy @= \
+            (s.inport_opt.write_reg_from[i] != PORT_FU_CROSSBAR) | s.reg_bank[i].outport_wr_rdy
+        s.recv_data_from_const[i].rdy @= \
+            (s.inport_opt.write_reg_from[i] != PORT_CONST) | s.reg_bank[i].outport_wr_rdy
 
   def line_trace(s):
     reg_bank_str = "reg_banks: " + "|".join([reg_bank.line_trace() for reg_bank in s.reg_bank])
     return f'{reg_bank_str}'
-
