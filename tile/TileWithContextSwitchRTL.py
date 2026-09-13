@@ -127,6 +127,8 @@ class TileWithContextSwitchRTL(Component):
     s.element_done = Wire(1)
     s.fu_crossbar_done = Wire(1)
     s.routing_crossbar_done = Wire(1)
+    s.rearm_pending = Wire(1)
+    s.hold_data = Wire(1)
 
     # Used for:
     # Clearing the 'first' signal in PhiRTL to correctly resume the progress.
@@ -159,6 +161,7 @@ class TileWithContextSwitchRTL(Component):
     # Ctrl address port.
     s.routing_crossbar.ctrl_addr_inport //= s.ctrl_mem.ctrl_addr_outport
     s.fu_crossbar.ctrl_addr_inport //= s.ctrl_mem.ctrl_addr_outport
+    s.element.ctrl_addr_inport //= s.ctrl_mem.ctrl_addr_outport
 
     # Connects context switch module
     s.context_switch.recv_cmd //= s.recv_from_controller_pkt.msg.payload.cmd
@@ -192,12 +195,12 @@ class TileWithContextSwitchRTL(Component):
         s.element.to_mem_waddr[i].rdy //= 0
         s.element.to_mem_wdata[i].rdy //= 0
 
-    # Feed clear signal to PhiRTL and CrossbarRTL to correctly resume the progress.
+    # TERMINATE retains its context-switch semantics; REARM starts a fresh run.
     for i in range(len(FuList)):
       if (FuList[i] == PhiRTL) | (FuList[i] == RetRTL):
         s.element.clear[i] //= s.clear
       else:
-        s.element.clear[i] //= 0
+        s.element.clear[i] //= s.ctrl_mem.rearm
     s.fu_crossbar.clear //= s.clear
     s.register_cluster.clear //= s.clear
     s.routing_crossbar.clear //= s.clear
@@ -207,8 +210,15 @@ class TileWithContextSwitchRTL(Component):
     # The data from other tiles should be connected to the
     # `routing_crossbar`.
     for i in range(num_tile_inports):
-      s.recv_data[i] //= s.tile_in_channel[i].recv
+      s.recv_data[i].msg //= s.tile_in_channel[i].recv.msg
       s.tile_in_channel[i].send //= s.routing_crossbar.recv_data[i]
+      s.tile_in_channel[i].clear //= s.clear
+
+    @update
+    def isolate_inputs():
+      for i in range(num_tile_inports):
+        s.tile_in_channel[i].recv.val @= s.recv_data[i].val & ~(s.hold_data | s.ctrl_mem.rearm)
+        s.recv_data[i].rdy @= s.tile_in_channel[i].recv.rdy & ~(s.hold_data | s.ctrl_mem.rearm)
 
     # Register banks are connected to the routing crossbar as additional
     # inports (num_tile_inports .. num_tile_inports+num_fu_inports-1),
@@ -256,6 +266,26 @@ class TileWithContextSwitchRTL(Component):
           s.element.recv_in[i]
       s.register_cluster.inport_opt //= s.ctrl_mem.send_ctrl.msg
 
+    # REARM retires locally before a following constant or launch is accepted.
+    @update_ff
+    def order_rearm():
+      if s.reset | s.ctrl_mem.rearm:
+        s.rearm_pending <<= 0
+      elif s.recv_from_controller_pkt.val & s.recv_from_controller_pkt.rdy & \
+           (s.recv_from_controller_pkt.msg.payload.cmd == CMD_REARM):
+        s.rearm_pending <<= 1
+
+    # Old neighbors must not refill cleared channels before their own REARM.
+    @update_ff
+    def hold_inputs():
+      if s.reset:
+        s.hold_data <<= 0
+      elif s.ctrl_mem.rearm:
+        s.hold_data <<= 1
+      elif s.recv_from_controller_pkt.val & s.recv_from_controller_pkt.rdy & \
+           (s.recv_from_controller_pkt.msg.payload.cmd == CMD_LAUNCH):
+        s.hold_data <<= 0
+
     @update
     def feed_pkt():
         s.ctrl_mem.recv_pkt_from_controller.msg @= CtrlPktType(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) # , 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
@@ -279,6 +309,11 @@ class TileWithContextSwitchRTL(Component):
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_CONFIG_STREAMING_LD_END_ADDR) | \
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_RECORD_PHI_ADDR) | \
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_LAUNCH) | \
+            (s.recv_from_controller_pkt.msg.payload.cmd == CMD_REARM) | \
+            (s.recv_from_controller_pkt.msg.payload.cmd == CMD_CONFIG_LOOP_LOWER) | \
+            (s.recv_from_controller_pkt.msg.payload.cmd == CMD_CONFIG_LOOP_UPPER) | \
+            (s.recv_from_controller_pkt.msg.payload.cmd == CMD_CONFIG_LOOP_STEP) | \
+            (s.recv_from_controller_pkt.msg.payload.cmd == CMD_CONFIG_GEP_STRIDE) | \
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_PAUSE) | \
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_PRESERVE) | \
             (s.recv_from_controller_pkt.msg.payload.cmd == CMD_RESUME)):
@@ -295,12 +330,13 @@ class TileWithContextSwitchRTL(Component):
             s.ctrl_mem.recv_pkt_from_controller.msg @= s.recv_from_controller_pkt.msg
             s.recv_from_controller_pkt.rdy @= s.ctrl_mem.recv_pkt_from_controller.rdy
             s.clear @= 1
-            for i in range(num_tile_inports):
-              s.tile_in_channel[i].clear @= 1
         else:
-            s.clear @= 0
-            for i in range(num_tile_inports):
-              s.tile_in_channel[i].clear @= 0
+            s.clear @= s.ctrl_mem.rearm
+
+        if s.rearm_pending:
+            s.ctrl_mem.recv_pkt_from_controller.val @= 0
+            s.const_mem.recv_const.val @= 0
+            s.recv_from_controller_pkt.rdy @= 0
 
     @update
     def update_send_out_signal():
@@ -379,4 +415,3 @@ class TileWithContextSwitchRTL(Component):
     const_mem = s.const_mem.line_trace()
     context_switch = s.context_switch.line_trace()
     return f"send_str: {send_str}, tile_inports: {recv_str} => [tile_in_channel: {tile_in_channel_str} || routing_crossbar: {s.routing_crossbar.recv_opt.msg} || fu_crossbar: {s.fu_crossbar.recv_opt.msg} || element: {s.element.line_trace()} || s.element_done: {s.element_done}, s.fu_crossbar_done: {s.fu_crossbar_done}, s.routing_crossbar_done: {s.routing_crossbar_done} ||  ctrl_mem: {ctrl_mem}, const_mem: {const_mem} || context_switch: {context_switch}## "
-

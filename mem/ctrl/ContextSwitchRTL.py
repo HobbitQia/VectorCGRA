@@ -70,7 +70,7 @@ class ContextSwitchRTL(Component):
     @update
     def update_msg():
       # Update condition.
-      s.progress_reg_is_null @= (s.progress_reg == DataType(0, 0))
+      s.progress_reg_is_null @= (s.progress_reg == DataType())
       s.is_pausing @= (s.status_reg == STATUS_PAUSING)
       s.is_preserving @= (s.status_reg == STATUS_PRESERVING)
       s.is_resuming @= (s.status_reg == STATUS_RESUMING)
@@ -84,19 +84,21 @@ class ContextSwitchRTL(Component):
       # time execution, this output should be replaced with the value in progress_reg.
       if (s.is_pausing & s.is_executing_phi):
         s.overwrite_fu_outport.val @= 1
-        s.overwrite_fu_outport.msg @= DataType(0, 0)
+        s.overwrite_fu_outport.msg @= DataType()
       elif (~s.progress_reg_is_null & s.is_resuming & s.is_executing_phi & \
               s.progress_in.predicate & s.progress_in_val):
         s.overwrite_fu_outport.val @= 1
         s.overwrite_fu_outport.msg @= s.progress_reg
       else:
         s.overwrite_fu_outport.val @= 0
-        s.overwrite_fu_outport.msg @= DataType(0, 0)
+        s.overwrite_fu_outport.msg @= DataType()
 
     @update_ff
     def update_regs():
       # Updates the status register.
-      if (s.recv_cmd_queue.send.val & (s.recv_cmd_queue.send.msg == CMD_PAUSE)):
+      if s.reset:
+        s.status_reg <<= STATUS_IDLE
+      elif (s.recv_cmd_queue.send.val & (s.recv_cmd_queue.send.msg == CMD_PAUSE)):
         s.status_reg <<= STATUS_PAUSING
       elif (s.recv_cmd_queue.send.val & (s.recv_cmd_queue.send.msg == CMD_PRESERVE)):
         s.status_reg <<= STATUS_PRESERVING
@@ -106,7 +108,9 @@ class ContextSwitchRTL(Component):
         s.status_reg <<= s.status_reg
 
       # Updates the progress register.
-      if (s.progress_reg_is_null & s.is_pausing & s.is_executing_phi) | \
+      if s.reset:
+        s.progress_reg <<= DataType()
+      elif (s.progress_reg_is_null & s.is_pausing & s.is_executing_phi) | \
            (s.is_preserving & s.is_executing_phi) & \
            (s.progress_in.predicate & s.progress_in_val):
         # Records the progress.
@@ -114,13 +118,15 @@ class ContextSwitchRTL(Component):
       elif (~s.progress_reg_is_null & s.is_resuming & s.is_executing_phi & \
               s.progress_in.predicate & s.progress_in_val):
         # Clears the register at next clock cycle if progress is resumed.
-        s.progress_reg <<= DataType(0, 0)
+        s.progress_reg <<= DataType()
       else:
         # Keeps the progress.
         s.progress_reg <<= s.progress_reg
 
       # Records the target PHI_CONST's ctrl mem address to the register.
-      if (s.recv_cmd_queue.send.val & (s.recv_cmd_queue.send.msg == CMD_RECORD_PHI_ADDR) & s.recv_phi_addr_queue.send.val):
+      if s.reset:
+        s.phi_addr_reg <<= 0
+      elif (s.recv_cmd_queue.send.val & (s.recv_cmd_queue.send.msg == CMD_RECORD_PHI_ADDR) & s.recv_phi_addr_queue.send.val):
         s.phi_addr_reg <<= s.recv_phi_addr_queue.send.msg
       else:
         s.phi_addr_reg <<= s.phi_addr_reg

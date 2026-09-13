@@ -15,7 +15,7 @@ from ..lib.util.common import *
 from ..mem.data.DataMemControllerRTL import DataMemControllerRTL
 from ..noc.PyOCN.pymtl3_net.ocnlib.ifcs.positions import mk_ring_pos
 from ..noc.PyOCN.pymtl3_net.ringnet.RingNetworkRTL import RingNetworkRTL
-from ..tile.TileRTL import TileRTL
+from ..tile.TileWithContextSwitchRTL import TileWithContextSwitchRTL
 from ..lib.util.data_struct_attr import *
 from ..lib.messages import *
 
@@ -211,7 +211,7 @@ class CgraTemplateRTL(Component):
       s.send_data_on_boundary_east  = [SendIfcRTL(DataType) for _ in range(max_per_cgra_rows)]
 
     # Components
-    s.tile = [TileRTL(CtrlPktType,
+    s.tile = [TileWithContextSwitchRTL(CtrlPktType,
                       ctrl_mem_size,
                       data_mem_size_global, num_ctrl,
                       total_steps, num_fu_inports, num_fu_outports,

@@ -7,6 +7,8 @@ Test cases for context switch module.
 Author : Yufei Yang
   Date : Aug 11, 2025
 """
+import pytest
+
 from ..ContextSwitchRTL import ContextSwitchRTL
 from ....lib.basic.val_rdy.SinkRTL import SinkRTL as TestSinkRTL
 from ....lib.basic.val_rdy.SourceRTL import SourceRTL as TestSrcRTL
@@ -83,6 +85,35 @@ def run_sim(test_harness, max_cycles = 20):
   test_harness.sim_tick()
   test_harness.sim_tick()
   test_harness.sim_tick()
+
+def test_system_reset():
+  dut = ContextSwitchRTL(32, 4)
+  DataType = mk_data(32)
+  dut.apply(DefaultPassGroup(linetrace=False))
+  dut.recv_cmd @= CMD_RECORD_PHI_ADDR
+  dut.recv_cmd_vld @= 0
+  dut.phi_addr @= 3
+  dut.recv_opt @= OPT_PHI_CONST
+  dut.ctrl_mem_rd_addr @= 3
+  dut.progress_in @= DataType(42, 1)
+  dut.progress_in_val @= 1
+  dut.overwrite_fu_outport.rdy @= 1
+  dut.sim_reset()
+  dut.recv_cmd_vld @= 1
+  dut.sim_tick()
+  dut.recv_cmd @= CMD_PRESERVE
+  dut.sim_tick()
+  dut.recv_cmd_vld @= 0
+  for _ in range(3):
+    dut.sim_tick()
+  if dut.status_reg != STATUS_PRESERVING or dut.phi_addr_reg != 3 or dut.progress_reg != DataType(42, 1):
+    pytest.fail("Context setup did not record the active progress")
+  dut.sim_reset()
+  if dut.status_reg != STATUS_IDLE or dut.phi_addr_reg != 0 or dut.progress_reg != DataType():
+    pytest.fail("System reset retained context-switch state")
+  if dut.overwrite_fu_outport.val:
+    pytest.fail("System reset left an active context override")
+
 
 # testcase for PHI_CONST that is responsible for iteration.
 def test_pause_resume_iteration():
