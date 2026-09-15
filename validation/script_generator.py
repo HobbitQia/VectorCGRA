@@ -375,8 +375,10 @@ class InstructionSignals:
                         has_const = True
                         break 
                 
-                #if take_up_fu_operation['opcode'] == 'PHI_CONST' or take_up_fu_operation['opcode'] == 'CONSTANT':
-                    #has_const = False # PHI_CONST and CONSTANT are special.
+                if take_up_fu_operation['opcode'] == 'PHI_CONST':
+                    # PHI_CONST has its own opcode even though one operand is
+                    # supplied by the constant queue.
+                    has_const = False
             
                 if has_const:
                     self.OpCode = yaml_to_VectorCGRA_map_const[self.operations[take_up_fu_operation_idx]['opcode']]
@@ -988,6 +990,20 @@ class ScriptFactory:
         resolved_path = _resolve_yaml_path(path)
         self.yaml_struct = yaml.load(open(resolved_path, 'r'), Loader=yaml.FullLoader)
         _apply_bindings(self.yaml_struct, bindings, DataAddrType.nbits)
+        # Older compiler output stores only the absolute timestep. Recover
+        # the modulo-II address and the number of prologue iterations so
+        # those YAML files remain executable with the current generator.
+        for core in self.yaml_struct['array_config']['cores']:
+            for entry in core['entries']:
+                for instruction in entry['instructions']:
+                    legacy_timestep = instruction.get(
+                        'timestep', instruction.get('index_per_ii', 0))
+                    instruction.setdefault('index_per_ii',
+                                           legacy_timestep % ii)
+                    for operation in instruction['operations']:
+                        operation.setdefault('invalid_iterations',
+                                             legacy_timestep // ii)
+                        operation.setdefault('time_step', legacy_timestep)
         self.path = resolved_path
         self.CtrlType = CtrlType
         self.IntraCgraPktType = IntraCgraPktType
@@ -1061,7 +1077,7 @@ if __name__ == "__main__":
     print("Test the Basic Functionality of the ScriptFactory")
 
     script_factory = ScriptFactory(
-        path = "./validation/test/gemm/gemm.yaml",
+        path = "./validation/test/gemm.yaml",
         CtrlType = CtrlTypeDummy,
         IntraCgraPktType = IntraCgraPktTypeDummy,
         CgraPayloadType = CgraPayloadTypeDummy,
