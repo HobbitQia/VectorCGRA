@@ -7,6 +7,8 @@ Test cases for control memory with command-based action handling.
 Author : Cheng Tan
   Date : Dec 21, 2024
 """
+import pytest
+
 from ..CtrlMemDynamicRTL import CtrlMemDynamicRTL
 from ....fu.single.AdderRTL import AdderRTL
 from ....fu.single.RetRTL import RetRTL
@@ -15,6 +17,7 @@ from ....lib.basic.val_rdy.SourceRTL import SourceRTL as TestSrcRTL
 from ....lib.cmd_type import *
 from ....lib.messages import *
 from ....lib.opt_type import *
+from ....lib.util.common import MAX_CTRL_COUNT
 
 #-------------------------------------------------------------------------
 # Test harness
@@ -26,7 +29,8 @@ class TestHarness(Component):
                 num_tile_inports, num_tile_outports, src0_msgs,
                 src1_msgs, ctrl_pkts, sink_msgs, num_tiles,
                 complete_signal_sink_out, ctrl_count_per_iter,
-                total_ctrl_steps_val, FuType):
+                total_ctrl_steps_val, FuType,
+                ctrl_count_bits = clog2(MAX_CTRL_COUNT + 1)):
 
     CgraPayloadType = CtrlPktType.get_field_type(kAttrPayload)
     CtrlSignalType = CgraPayloadType.get_field_type(kAttrCtrl)
@@ -41,7 +45,8 @@ class TestHarness(Component):
     s.ctrl_mem = MemUnit(CtrlPktType,
                          ctrl_mem_size, num_fu_inports, num_fu_outports,
                          num_tile_inports, num_tile_outports, 1, num_tiles,
-                         ctrl_count_per_iter, total_ctrl_steps_val)
+                         ctrl_count_per_iter, total_ctrl_steps_val,
+                         ctrl_count_bits = ctrl_count_bits)
 
     # Connections.
     s.fu.send_to_ctrl_mem //= s.ctrl_mem.recv_from_element
@@ -80,7 +85,8 @@ def run_sim(test_harness, max_cycles = 20):
   test_harness.sim_tick()
   test_harness.sim_tick()
 
-def test_ctrl():
+@pytest.mark.parametrize("ctrl_count_bits, repeats", [(11, 1), (14, 4000)])
+def test_ctrl(ctrl_count_bits, repeats):
   MemUnit = CtrlMemDynamicRTL
   data_nbits = 16
   DataType = mk_data(data_nbits, 1)
@@ -135,7 +141,8 @@ def test_ctrl():
       IntraCgraPktType(0,  num_tiles,  0, 0, 0, 0, 0, 0, 0,  0, CgraPayloadType(CMD_COMPLETE))]
   
   ctrl_count_per_iter = len(src_ctrl_pkt) - 1
-  total_ctrl_steps_val = len(src_ctrl_pkt) - 1
+  total_ctrl_steps_val = ctrl_count_per_iter * repeats
+  src_ctrl_pkt.insert(-1, IntraCgraPktType(payload = CgraPayloadType(CMD_CONFIG_TOTAL_CTRL_COUNT, data = DataType(total_ctrl_steps_val, 1))))
 
   th = TestHarness(MemUnit,
                    IntraCgraPktType,
@@ -145,16 +152,17 @@ def test_ctrl():
                    num_fu_outports,
                    num_tile_inports,
                    num_tile_outports,
-                   src_data0,
-                   src_data1,
+                   src_data0 * repeats,
+                   src_data1 * repeats,
                    src_ctrl_pkt,
-                   sink_out,
+                   sink_out * repeats,
                    num_tiles,
                    complete_signal_sink_out,
                    ctrl_count_per_iter,
-                   total_ctrl_steps_val,
-                   AdderRTL)
-  run_sim(th)
+                   ctrl_count_per_iter,
+                   AdderRTL,
+                   ctrl_count_bits = ctrl_count_bits)
+  run_sim(th, max_cycles = total_ctrl_steps_val + 20)
 
 def test_ctrl_bound():
   MemUnit = CtrlMemDynamicRTL

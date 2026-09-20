@@ -13,6 +13,7 @@ from .CgraTemplateRTL import CgraTemplateRTL
 from ..lib.basic.val_rdy.ifcs import ValRdyRecvIfcRTL as RecvIfcRTL
 from ..lib.basic.val_rdy.ifcs import ValRdySendIfcRTL as SendIfcRTL
 from ..lib.messages import *
+from ..lib.util.common import MAX_CTRL_COUNT
 from ..lib.util.data_struct_attr import *
 from ..mem.dma.DmaEngineRTL import DmaEngineRTL
 
@@ -50,7 +51,8 @@ class IntegratedCgraWithDmaRTL( Component ):
                 provided_max_per_cgra_rows = None,
                 provided_max_per_cgra_cols = None,
                 provided_max_num_rd_tiles = None,
-                provided_max_num_wr_tiles = None):
+                provided_max_num_wr_tiles = None,
+                ctrl_count_bits = clog2(MAX_CTRL_COUNT + 1)):
 
     DataType = CgraPayloadType.get_field_type(kAttrData)
     data_bitwidth = DataType.get_field_type(kAttrPayload).nbits
@@ -141,7 +143,8 @@ class IntegratedCgraWithDmaRTL( Component ):
                              provided_max_num_wr_tiles,
                              has_dma_ports = True,
                              DmaDataType = DmaDataType,
-                             DmaCmdType = DmaCmdType)
+                             DmaCmdType = DmaCmdType,
+                             ctrl_count_bits = ctrl_count_bits)
 
     DmaBytesType = DmaCmdType.get_field_type(kAttrNBytes)
     DmaTagType = DmaCmdType.get_field_type(kAttrDmaTag)

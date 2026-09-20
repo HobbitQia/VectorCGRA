@@ -43,7 +43,8 @@ class TileRTL(Component):
                 num_tile_inports, num_tile_outports, num_cgras, num_tiles,
                 num_registers_per_reg_bank = 16,
                 Fu = FlexibleFuRTL,
-                FuList = [PhiRTL, AdderRTL, CompRTL, MulRTL, GrantRTL, MemUnitRTL]):
+                FuList = [PhiRTL, AdderRTL, CompRTL, MulRTL, GrantRTL, MemUnitRTL],
+                ctrl_count_bits = clog2(MAX_CTRL_COUNT + 1)):
 
     # Derives types from IntraCgraPktType.
     CgraPayloadType = IntraCgraPktType.get_field_type(kAttrPayload)
@@ -112,7 +113,8 @@ class TileRTL(Component):
                                    num_cgras,
                                    num_tiles,
                                    num_ctrl,
-                                   total_steps)
+                                   total_steps,
+                                   ctrl_count_bits = ctrl_count_bits)
 
     # The `tile_in_channel` indicates the outport channels that are
     # connected to the next tiles.

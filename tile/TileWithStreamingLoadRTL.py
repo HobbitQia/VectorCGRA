@@ -36,7 +36,8 @@ class TileWithStreamingLoadRTL(Component):
                 num_tile_inports, num_tile_outports, num_cgras, num_tiles,
                 num_registers_per_reg_bank = 16,
                 Fu = FlexibleFuRTL,
-                FuList = [PhiRTL, AdderRTL, CompRTL, MulRTL, GrantRTL, StreamingMemUnitRTL]):
+                FuList = [PhiRTL, AdderRTL, CompRTL, MulRTL, GrantRTL, StreamingMemUnitRTL],
+                ctrl_count_bits = clog2(MAX_CTRL_COUNT + 1)):
 
     # Derives types from IntraCgraPktType.
     CgraPayloadType = IntraCgraPktType.get_field_type(kAttrPayload)
@@ -105,7 +106,8 @@ class TileWithStreamingLoadRTL(Component):
                                    num_cgras,
                                    num_tiles,
                                    num_ctrl,
-                                   total_steps)
+                                   total_steps,
+                                   ctrl_count_bits = ctrl_count_bits)
 
     # The `tile_in_channel` indicates the outport channels that are
     # connected to the next tiles.
@@ -329,4 +331,3 @@ class TileWithStreamingLoadRTL(Component):
     ctrl_mem = s.ctrl_mem.line_trace()
     const_mem = s.const_mem.line_trace()
     return f"send_str: {send_str}, tile_inports: {recv_str} => [tile_in_channel: {tile_in_channel_str} || routing_crossbar: {s.routing_crossbar.recv_opt.msg} || fu_crossbar: {s.fu_crossbar.recv_opt.msg} || element: {s.element.line_trace()} || s.element_done: {s.element_done}, s.fu_crossbar_done: {s.fu_crossbar_done}, s.routing_crossbar_done: {s.routing_crossbar_done} ||  ctrl_mem: {ctrl_mem}, const_mem: {const_mem} ## "
-

@@ -117,7 +117,8 @@ class CgraTemplateRTL(Component):
                 provided_max_num_wr_tiles = None,
                 has_dma_ports = False,
                 DmaDataType = mk_dma_data(),
-                DmaCmdType = mk_dma_cmd()):
+                DmaCmdType = mk_dma_cmd(),
+                ctrl_count_bits = clog2(MAX_CTRL_COUNT + 1)):
     """
     provided_max_per_cgra_rows: the row number of the largest cgra in the multi heterogeneous cgra architecture. None for single cgra arch or Homogeneous multi-cgra arch.
     provided_max_per_cgra_cols: the column number of the largest cgra in the multi heterogeneous cgra architecture. None for single cgra arch or Homogeneous multi-cgra arch.
@@ -218,7 +219,8 @@ class CgraTemplateRTL(Component):
                       num_tile_inports, num_tile_outports,
                       num_cgras, s.num_tiles,
                       num_registers_per_reg_bank,
-                      FuList = map_fu2rtl(TileList[i].getAllValidFuTypes()))
+                      FuList = map_fu2rtl(TileList[i].getAllValidFuTypes()),
+                      ctrl_count_bits = ctrl_count_bits)
               for i in range(s.num_tiles)]
     # FIXME: Need to enrish data-SPM-related user-controlled parameters, e.g., number of banks.
     s.data_mem = DataMemControllerRTL(NocPktType,

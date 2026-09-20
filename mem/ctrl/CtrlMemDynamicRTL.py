@@ -26,7 +26,8 @@ class CtrlMemDynamicRTL(Component):
                 ctrl_mem_size, num_fu_inports, num_fu_outports,
                 num_tile_inports, num_tile_outports, num_cgras,
                 num_tiles, ctrl_count_per_iter = 4,
-                total_ctrl_steps = 4):
+                total_ctrl_steps = 4,
+                ctrl_count_bits = clog2(MAX_CTRL_COUNT + 1)):
 
     CgraPayloadType = IntraCgraPktType.get_field_type(kAttrPayload)
     CtrlType = CgraPayloadType.get_field_type(kAttrCtrl)
@@ -41,7 +42,7 @@ class CtrlMemDynamicRTL(Component):
     CtrlAddrType = mk_bits(clog2(ctrl_mem_size))
     PCType = mk_bits(clog2(ctrl_count_per_iter + 1))
     UpperBoundType = mk_bits(clog2(ctrl_mem_size + 1))
-    TimeType = mk_bits(clog2(MAX_CTRL_COUNT + 1))
+    TimeType = mk_bits(ctrl_count_bits)
     PrologueCountType = mk_bits(clog2(PROLOGUE_MAX_COUNT + 1))
     num_routing_xbar_inports = num_tile_inports + num_fu_inports
     TileInPortType = mk_bits(clog2(num_routing_xbar_inports))
