@@ -1,0 +1,236 @@
+# Q8 logits to Q15 probabilities: exp phase.
+# Gemmini CPU polynomial: a=0.3585, b=1.353, c=0.344, input scale=1/256.
+# Shift the polynomial by two extra bits so Q15 normalization fits INT32.
+array_config:
+  columns: 4
+  rows: 4
+  compiled_ii: 16
+  cores:
+    - column: 0
+      row: 0
+      core_id: "0"
+      entries:
+        - entry_id: entry0
+          instructions:
+            - index_per_ii: 0
+              operations:
+                - opcode: PHI_CONST
+                  id: 0
+                  time_step: 0
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$3", color: RED}, {operand: "arg0", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}, {operand: "$24", color: RED}]
+            - index_per_ii: 1
+              operations:
+                - opcode: LOAD
+                  id: 1
+                  time_step: 1
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}]
+                  dst_operands: [{operand: "$8", color: RED}]
+            - index_per_ii: 2
+              operations:
+                - opcode: PHI_CONST
+                  id: 2
+                  time_step: 2
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$17", color: RED}, {operand: "arg1", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}, {operand: "$17", color: RED}]
+            - index_per_ii: 3
+              operations:
+                - opcode: LOAD
+                  id: 3
+                  time_step: 3
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}]
+            - index_per_ii: 4
+              operations:
+                - opcode: SUB
+                  id: 4
+                  time_step: 4
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}, {operand: "$8", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}, {operand: "$8", color: RED}]
+            - index_per_ii: 5
+              operations:
+                - opcode: ICMP_SLT
+                  id: 5
+                  time_step: 5
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}, {operand: "#4096", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}]
+            - index_per_ii: 6
+              operations:
+                - opcode: PHI_CONST
+                  id: 6
+                  time_step: 6
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$26", color: RED}, {operand: "#4096", color: RED}]
+                  dst_operands: [{operand: "$16", color: RED}, {operand: "$26", color: RED}]
+            - index_per_ii: 7
+              operations:
+                - opcode: SEL
+                  id: 7
+                  time_step: 7
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}, {operand: "$8", color: RED}, {operand: "$16", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}, {operand: "$8", color: RED}]
+            - index_per_ii: 8
+              operations:
+                - opcode: MUL
+                  id: 8
+                  time_step: 8
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}, {operand: "#370", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}]
+            - index_per_ii: 9
+              operations:
+                - opcode: PHI_CONST
+                  id: 9
+                  time_step: 9
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$27", color: RED}, {operand: "#16", color: RED}]
+                  dst_operands: [{operand: "$16", color: RED}, {operand: "$27", color: RED}]
+            - index_per_ii: 10
+              operations:
+                - opcode: SHR
+                  id: 10
+                  time_step: 10
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}, {operand: "$16", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}, {operand: "$16", color: RED}]
+            - index_per_ii: 11
+              operations:
+                - opcode: MUL
+                  id: 11
+                  time_step: 11
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}, {operand: "#177", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}]
+            - index_per_ii: 12
+              operations:
+                - opcode: SUB
+                  id: 12
+                  time_step: 12
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}, {operand: "$8", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}]
+            - index_per_ii: 13
+              operations:
+                - opcode: ADD
+                  id: 13
+                  time_step: 13
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}, {operand: "#346", color: RED}]
+                  dst_operands: [{operand: "EAST", color: RED}]
+            - index_per_ii: 14
+              operations:
+                - opcode: ADD
+                  id: 14
+                  time_step: 14
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$16", color: RED}, {operand: "#2", color: RED}]
+                  dst_operands: [{operand: "EAST", color: RED}]
+            - index_per_ii: 15
+              operations:
+                - opcode: ADD
+                  id: 15
+                  time_step: 15
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$24", color: RED}, {operand: "#1", color: RED}]
+                  dst_operands: [{operand: "$3", color: RED}]
+    - column: 1
+      row: 0
+      core_id: "1"
+      entries:
+        - entry_id: entry0
+          instructions:
+            - index_per_ii: 0
+              operations:
+                - opcode: DATA_MOV
+                  id: 100
+                  time_step: 0
+                  invalid_iterations: 0
+                  src_operands: [{operand: "WEST", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}, {operand: "$8", color: RED}]
+            - index_per_ii: 1
+              operations:
+                - opcode: MUL
+                  id: 101
+                  time_step: 1
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}, {operand: "$8", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}]
+            - index_per_ii: 2
+              operations:
+                - opcode: ADD
+                  id: 102
+                  time_step: 2
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}, {operand: "#62885", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}]
+            - index_per_ii: 3
+              operations:
+                - opcode: SHR
+                  id: 103
+                  time_step: 3
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}, {operand: "WEST", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}, {operand: "$8", color: RED}]
+            - index_per_ii: 4
+              operations:
+                - opcode: PHI_CONST
+                  id: 104
+                  time_step: 4
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$1", color: RED}, {operand: "#0", color: RED}]
+                  dst_operands: [{operand: "$16", color: RED}]
+            - index_per_ii: 5
+              operations:
+                - opcode: ADD
+                  id: 105
+                  time_step: 5
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}, {operand: "$16", color: RED}]
+                  dst_operands: [{operand: "$1", color: RED}, {operand: "$16", color: RED}]
+            - index_per_ii: 6
+              operations:
+                - opcode: PHI_CONST
+                  id: 106
+                  time_step: 6
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$2", color: RED}, {operand: "arg2", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}, {operand: "$24", color: RED}]
+            - index_per_ii: 7
+              operations:
+                - opcode: STORE
+                  id: 107
+                  time_step: 7
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$8", color: RED}, {operand: "$0", color: RED}]
+                  dst_operands: []
+            - index_per_ii: 8
+              operations:
+                - opcode: PHI_CONST
+                  id: 108
+                  time_step: 8
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$17", color: RED}, {operand: "arg3", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}, {operand: "$17", color: RED}]
+            - index_per_ii: 9
+              operations:
+                - opcode: STORE
+                  id: 109
+                  time_step: 9
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$16", color: RED}, {operand: "$0", color: RED}]
+                  dst_operands: []
+            - index_per_ii: 10
+              operations:
+                - opcode: ADD
+                  id: 110
+                  time_step: 10
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$24", color: RED}, {operand: "#1", color: RED}]
+                  dst_operands: [{operand: "$2", color: RED}]

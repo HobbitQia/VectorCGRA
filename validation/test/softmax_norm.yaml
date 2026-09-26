@@ -1,0 +1,117 @@
+# Q8 logits to Q15 probabilities: norm phase.
+# Round each probability independently; their sum can differ slightly from 32768.
+array_config:
+  columns: 4
+  rows: 4
+  compiled_ii: 13
+  cores:
+    - column: 0
+      row: 0
+      core_id: "0"
+      entries:
+        - entry_id: entry0
+          instructions:
+            - index_per_ii: 0
+              operations:
+                - opcode: PHI_CONST
+                  id: 0
+                  time_step: 0
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$3", color: RED}, {operand: "arg0", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}, {operand: "$25", color: RED}]
+            - index_per_ii: 1
+              operations:
+                - opcode: LOAD
+                  id: 1
+                  time_step: 1
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}]
+                  dst_operands: [{operand: "$8", color: RED}]
+            - index_per_ii: 2
+              operations:
+                - opcode: PHI_CONST
+                  id: 2
+                  time_step: 2
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$17", color: RED}, {operand: "arg1", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}, {operand: "$17", color: RED}]
+            - index_per_ii: 3
+              operations:
+                - opcode: LOAD
+                  id: 3
+                  time_step: 3
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$0", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}, {operand: "$16", color: RED}]
+            - index_per_ii: 4
+              operations:
+                - opcode: PHI_CONST
+                  id: 4
+                  time_step: 4
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$18", color: RED}, {operand: "#1", color: RED}]
+                  dst_operands: [{operand: "$24", color: RED}, {operand: "$18", color: RED}]
+            - index_per_ii: 5
+              operations:
+                - opcode: SHR
+                  id: 5
+                  time_step: 5
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$16", color: RED}, {operand: "$24", color: RED}]
+                  dst_operands: [{operand: "$16", color: RED}]
+            - index_per_ii: 6
+              operations:
+                - opcode: MUL
+                  id: 6
+                  time_step: 6
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$8", color: RED}, {operand: "#32768", color: RED}]
+                  dst_operands: [{operand: "$8", color: RED}]
+            - index_per_ii: 7
+              operations:
+                - opcode: ADD
+                  id: 7
+                  time_step: 7
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$8", color: RED}, {operand: "$16", color: RED}]
+                  dst_operands: [{operand: "$8", color: RED}]
+            - index_per_ii: 8
+              operations:
+                - opcode: DIV
+                  id: 8
+                  time_step: 8
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$8", color: RED}, {operand: "$0", color: RED}]
+                  dst_operands: [{operand: "$8", color: RED}]
+            - index_per_ii: 9
+              operations:
+                - opcode: PHI_CONST
+                  id: 9
+                  time_step: 9
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$2", color: RED}, {operand: "arg2", color: RED}]
+                  dst_operands: [{operand: "$0", color: RED}, {operand: "$16", color: RED}]
+            - index_per_ii: 10
+              operations:
+                - opcode: STORE
+                  id: 10
+                  time_step: 10
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$8", color: RED}, {operand: "$0", color: RED}]
+                  dst_operands: []
+            - index_per_ii: 11
+              operations:
+                - opcode: ADD
+                  id: 11
+                  time_step: 11
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$16", color: RED}, {operand: "#1", color: RED}]
+                  dst_operands: [{operand: "$2", color: RED}]
+            - index_per_ii: 12
+              operations:
+                - opcode: ADD
+                  id: 12
+                  time_step: 12
+                  invalid_iterations: 0
+                  src_operands: [{operand: "$25", color: RED}, {operand: "#1", color: RED}]
+                  dst_operands: [{operand: "$3", color: RED}]

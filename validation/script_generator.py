@@ -157,6 +157,7 @@ yaml_to_VectorCGRA_map = {
     "SEXT": OPT_PAS, # no sext, just a fake one.
     "ZEXT": OPT_PAS, # zero extension treated as pass-through
     "SHL": OPT_LLS,
+    "SHR": OPT_LRS,
     "VFMUL": None, # ?
     "FADD_FADD": None, #?
     "FMUL_FADD": None, #?
